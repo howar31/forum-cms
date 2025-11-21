@@ -15,13 +15,13 @@ const {
   owner,
 } = utils.accessControl
 
-const listConfigurations = list ({
+const listConfigurations = list({
   fields: {
-	name: text({ validation: { isRequired: true }, isIndexed: "unique" }),
+    name: text({ validation: { isRequired: true }, isIndexed: "unique", label: '名稱' }),
     // pick: relationship({ ref: 'Pick', many: true }),
-    story: relationship({ ref: 'Story.tag', many: true }),
   },
   ui: {
+    label: '標籤',
     listView: {
       initialColumns: ['name'],
     },

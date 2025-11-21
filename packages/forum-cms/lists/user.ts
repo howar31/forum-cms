@@ -58,6 +58,7 @@ const listConfigurations = list({
     //   many: false,
     // }),
     isProtected: checkbox({
+      label: '受保護',
       defaultValue: false,
     }),
     passwordUpdatedAt: timestamp({
@@ -80,6 +81,7 @@ const listConfigurations = list({
   },
 
   ui: {
+    label: '使用者',
     listView: {
       initialColumns: ['name', 'role'],
     },

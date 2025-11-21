@@ -12,34 +12,34 @@ generator client {
 }
 
 model User {
-  id                       Int         @id @default(autoincrement())
-  name                     String      @default("")
-  email                    String      @unique @default("")
-  password                 String
-  role                     String
-  isProtected              Boolean     @default(false)
-  passwordUpdatedAt        DateTime?   @default(now())
-  mustChangePassword       Boolean     @default(false)
-  from_Category_createdBy  Category[]  @relation("Category_createdBy")
-  from_Category_updatedBy  Category[]  @relation("Category_updatedBy")
-  from_Comment_createdBy   Comment[]   @relation("Comment_createdBy")
-  from_Comment_updatedBy   Comment[]   @relation("Comment_updatedBy")
-  from_Story_createdBy     Story[]     @relation("Story_createdBy")
-  from_Story_updatedBy     Story[]     @relation("Story_updatedBy")
-  from_StoryType_createdBy StoryType[] @relation("StoryType_createdBy")
-  from_StoryType_updatedBy StoryType[] @relation("StoryType_updatedBy")
-  from_Tag_createdBy       Tag[]       @relation("Tag_createdBy")
-  from_Tag_updatedBy       Tag[]       @relation("Tag_updatedBy")
-  from_Member_createdBy    Member[]    @relation("Member_createdBy")
-  from_Member_updatedBy    Member[]    @relation("Member_updatedBy")
-  from_Photo_createdBy     Photo[]     @relation("Photo_createdBy")
-  from_Photo_updatedBy     Photo[]     @relation("Photo_updatedBy")
+  id                      Int        @id @default(autoincrement())
+  name                    String     @default("")
+  email                   String     @unique @default("")
+  password                String
+  role                    String
+  isProtected             Boolean    @default(false)
+  passwordUpdatedAt       DateTime?  @default(now())
+  mustChangePassword      Boolean    @default(false)
+  from_Category_createdBy Category[] @relation("Category_createdBy")
+  from_Category_updatedBy Category[] @relation("Category_updatedBy")
+  from_Comment_createdBy  Comment[]  @relation("Comment_createdBy")
+  from_Comment_updatedBy  Comment[]  @relation("Comment_updatedBy")
+  from_Tag_createdBy      Tag[]      @relation("Tag_createdBy")
+  from_Tag_updatedBy      Tag[]      @relation("Tag_updatedBy")
+  from_Member_createdBy   Member[]   @relation("Member_createdBy")
+  from_Member_updatedBy   Member[]   @relation("Member_updatedBy")
+  from_Post_createdBy     Post[]     @relation("Post_createdBy")
+  from_Post_updatedBy     Post[]     @relation("Post_updatedBy")
+  from_Reaction_createdBy Reaction[] @relation("Reaction_createdBy")
+  from_Reaction_updatedBy Reaction[] @relation("Reaction_updatedBy")
+  from_Photo_createdBy    Photo[]    @relation("Photo_createdBy")
+  from_Photo_updatedBy    Photo[]    @relation("Photo_updatedBy")
 }
 
 model Category {
   id                             Int       @id @default(autoincrement())
   title                          String    @default("")
-  slug                           String    @default("")
+  slug                           String    @unique @default("")
   summary                        String    @default("")
   priority                       Int       @default(0)
   createdAt                      DateTime?
@@ -48,7 +48,6 @@ model Category {
   createdById                    Int?      @map("createdBy")
   updatedBy                      User?     @relation("Category_updatedBy", fields: [updatedById], references: [id])
   updatedById                    Int?      @map("updatedBy")
-  from_Story_category            Story[]   @relation("Story_category")
   from_Member_following_category Member[]  @relation("Member_following_category")
 
   @@index([createdById])
@@ -56,91 +55,40 @@ model Category {
 }
 
 model Comment {
-  id                  Int       @id @default(autoincrement())
-  member              Member?   @relation("Comment_member", fields: [memberId], references: [id])
-  memberId            Int?      @map("member")
-  story               Story?    @relation("Comment_story", fields: [storyId], references: [id])
-  storyId             Int?      @map("story")
-  content             String    @default("")
-  parent              Comment?  @relation("Comment_parent", fields: [parentId], references: [id])
-  parentId            Int?      @map("parent")
-  root                Comment?  @relation("Comment_root", fields: [rootId], references: [id])
-  rootId              Int?      @map("root")
-  like                Member[]  @relation("Comment_like")
-  state               String?   @default("public")
+  id                  Int               @id @default(autoincrement())
+  member              Member?           @relation("Comment_member", fields: [memberId], references: [id])
+  memberId            Int?              @map("member")
+  content             String            @default("")
+  content_zh          String            @default("")
+  content_en          String            @default("")
+  content_vi          String            @default("")
+  content_id          String            @default("")
+  content_th          String            @default("")
+  post                Post?             @relation("Comment_post", fields: [postId], references: [id])
+  postId              Int?              @map("post")
+  reactions           Reaction[]        @relation("Reaction_comment")
+  parent              Comment?          @relation("Comment_parent", fields: [parentId], references: [id])
+  parentId            Int?              @map("parent")
+  root                Comment?          @relation("Comment_root", fields: [rootId], references: [id])
+  rootId              Int?              @map("root")
+  like                Member[]          @relation("Comment_like")
+  state               CommentStateType? @default(public)
   published_date      DateTime?
-  is_edited           Boolean   @default(false)
-  is_active           Boolean   @default(true)
+  is_edited           Boolean           @default(false)
+  is_active           Boolean           @default(true)
   createdAt           DateTime?
   updatedAt           DateTime?
-  createdBy           User?     @relation("Comment_createdBy", fields: [createdById], references: [id])
-  createdById         Int?      @map("createdBy")
-  updatedBy           User?     @relation("Comment_updatedBy", fields: [updatedById], references: [id])
-  updatedById         Int?      @map("updatedBy")
-  from_Comment_parent Comment[] @relation("Comment_parent")
-  from_Comment_root   Comment[] @relation("Comment_root")
+  createdBy           User?             @relation("Comment_createdBy", fields: [createdById], references: [id])
+  createdById         Int?              @map("createdBy")
+  updatedBy           User?             @relation("Comment_updatedBy", fields: [updatedById], references: [id])
+  updatedById         Int?              @map("updatedBy")
+  from_Comment_parent Comment[]         @relation("Comment_parent")
+  from_Comment_root   Comment[]         @relation("Comment_root")
 
   @@index([memberId])
-  @@index([storyId])
+  @@index([postId])
   @@index([parentId])
   @@index([rootId])
-  @@index([createdById])
-  @@index([updatedById])
-}
-
-model Story {
-  id                 Int                    @id @default(autoincrement())
-  title              String                 @default("")
-  url                String                 @unique @default("")
-  summary            String                 @default("")
-  content            String                 @default("")
-  trimContent        String                 @default("")
-  writer             String                 @default("")
-  apiData            Json?
-  trimApiData        Json?
-  author             Member?                @relation("Story_author", fields: [authorId], references: [id])
-  authorId           Int?                   @map("author")
-  category           Category?              @relation("Story_category", fields: [categoryId], references: [id])
-  categoryId         Int?                   @map("category")
-  comment            Comment[]              @relation("Comment_story")
-  related            Story[]                @relation("Story_related")
-  published_date     DateTime?
-  og_title           String                 @default("")
-  og_image           String                 @default("")
-  og_description     String                 @default("")
-  full_content       Boolean                @default(false)
-  paywall            Boolean                @default(false)
-  isMember           Boolean                @default(false)
-  origid             String                 @default("")
-  full_screen_ad     StoryFullScreenAdType? @default(none)
-  is_active          Boolean                @default(true)
-  tag                Tag[]                  @relation("Story_tag")
-  story_type         StoryStoryTypeType?    @default(story)
-  createdAt          DateTime?
-  updatedAt          DateTime?
-  createdBy          User?                  @relation("Story_createdBy", fields: [createdById], references: [id])
-  createdById        Int?                   @map("createdBy")
-  updatedBy          User?                  @relation("Story_updatedBy", fields: [updatedById], references: [id])
-  updatedById        Int?                   @map("updatedBy")
-  from_Story_related Story[]                @relation("Story_related")
-
-  @@index([authorId])
-  @@index([categoryId])
-  @@index([story_type])
-  @@index([createdById])
-  @@index([updatedById])
-}
-
-model StoryType {
-  id          Int       @id @default(autoincrement())
-  name        String    @unique @default("")
-  createdAt   DateTime?
-  updatedAt   DateTime?
-  createdBy   User?     @relation("StoryType_createdBy", fields: [createdById], references: [id])
-  createdById Int?      @map("createdBy")
-  updatedBy   User?     @relation("StoryType_updatedBy", fields: [updatedById], references: [id])
-  updatedById Int?      @map("updatedBy")
-
   @@index([createdById])
   @@index([updatedById])
 }
@@ -148,7 +96,6 @@ model StoryType {
 model Tag {
   id          Int       @id @default(autoincrement())
   name        String    @unique @default("")
-  story       Story[]   @relation("Story_tag")
   createdAt   DateTime?
   updatedAt   DateTime?
   createdBy   User?     @relation("Tag_createdBy", fields: [createdById], references: [id])
@@ -170,28 +117,75 @@ model Member {
   intro              String              @default("")
   avatar_image       Photo?              @relation("Member_avatar_image", fields: [avatar_imageId], references: [id])
   avatar_imageId     Int?                @map("avatar_image")
-  wallet             String              @default("")
   email              String              @unique @default("")
   is_active          Boolean             @default(true)
   verified           Boolean             @default(false)
   comment            Comment[]           @relation("Comment_member")
   member_like        Comment[]           @relation("Comment_like")
+  posts              Post[]              @relation("Post_author")
+  reactions          Reaction[]          @relation("Reaction_member")
   follower           Member[]            @relation("Member_follower")
   following          Member[]            @relation("Member_follower")
   block              Member[]            @relation("Member_block")
   blocked            Member[]            @relation("Member_block")
   following_category Category[]          @relation("Member_following_category")
-  balance            Int?                @default(0)
-  language           MemberLanguageType? @default(zh_TW)
+  language           MemberLanguageType? @default(zh)
   createdAt          DateTime?
   updatedAt          DateTime?
   createdBy          User?               @relation("Member_createdBy", fields: [createdById], references: [id])
   createdById        Int?                @map("createdBy")
   updatedBy          User?               @relation("Member_updatedBy", fields: [updatedById], references: [id])
   updatedById        Int?                @map("updatedBy")
-  from_Story_author  Story[]             @relation("Story_author")
 
   @@index([avatar_imageId])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+model Post {
+  id          Int        @id @default(autoincrement())
+  title       String     @default("")
+  content_zh  String     @default("")
+  content_en  String     @default("")
+  content_vi  String     @default("")
+  content_id  String     @default("")
+  content_th  String     @default("")
+  author      Member?    @relation("Post_author", fields: [authorId], references: [id])
+  authorId    Int?       @map("author")
+  comments    Comment[]  @relation("Comment_post")
+  reactions   Reaction[] @relation("Reaction_post")
+  is_active   Boolean    @default(true)
+  createdAt   DateTime?
+  updatedAt   DateTime?
+  createdBy   User?      @relation("Post_createdBy", fields: [createdById], references: [id])
+  createdById Int?       @map("createdBy")
+  updatedBy   User?      @relation("Post_updatedBy", fields: [updatedById], references: [id])
+  updatedById Int?       @map("updatedBy")
+
+  @@index([authorId])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+model Reaction {
+  id          Int                 @id @default(autoincrement())
+  member      Member?             @relation("Reaction_member", fields: [memberId], references: [id])
+  memberId    Int?                @map("member")
+  post        Post?               @relation("Reaction_post", fields: [postId], references: [id])
+  postId      Int?                @map("post")
+  comment     Comment?            @relation("Reaction_comment", fields: [commentId], references: [id])
+  commentId   Int?                @map("comment")
+  emotion     ReactionEmotionType
+  createdAt   DateTime?
+  updatedAt   DateTime?
+  createdBy   User?               @relation("Reaction_createdBy", fields: [createdById], references: [id])
+  createdById Int?                @map("createdBy")
+  updatedBy   User?               @relation("Reaction_updatedBy", fields: [updatedById], references: [id])
+  updatedById Int?                @map("updatedBy")
+
+  @@index([memberId])
+  @@index([postId])
+  @@index([commentId])
   @@index([createdById])
   @@index([updatedById])
 }
@@ -218,25 +212,23 @@ model Photo {
   @@map("Image")
 }
 
-enum StoryFullScreenAdType {
-  mobile
-  desktop
-  all
-  none
-}
-
-enum StoryStoryTypeType {
-  story
-  podcast
-  video
+enum CommentStateType {
+  public
+  private
+  friend
 }
 
 enum MemberLanguageType {
-  zh_TW
-  zh_CN
-  en_US
-  en_GB
-  ja_JP
-  fr_FR
-  de_DE
+  zh
+  en
+  vi
+  id
+  th
+}
+
+enum ReactionEmotionType {
+  happy
+  angry
+  surprise
+  sad
 }

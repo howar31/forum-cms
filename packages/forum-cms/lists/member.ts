@@ -7,156 +7,104 @@ const { allowRoles, admin, moderator, editor } = utils.accessControl
 const listConfigurations = list({
   fields: {
     firebaseId: text({
-      label: 'firebaseId',
+      label: 'Firebase ID',
       validation: {
         isRequired: true,
       },
       isIndexed: 'unique',
     }),
     customId: text({
-      label: 'customId',
+      label: '自訂 ID',
       validation: {
         isRequired: true,
       },
       isIndexed: 'unique',
     }),
     name: text({
+      label: '姓名',
       validation: { isRequired: true },
     }),
-    nickname: text({ validation: { isRequired: true } }),
-    avatar: text({ validation: { isRequired: false } }),
-    intro: text({ validation: { isRequired: false } }),
+    nickname: text({ label: '暱稱', validation: { isRequired: true } }),
+    avatar: text({ label: '頭像', validation: { isRequired: false } }),
+    intro: text({ label: '介紹', validation: { isRequired: false } }),
     avatar_image: relationship({
-      label: 'PFP',
+      label: '頭像圖片',
       ref: 'Photo',
     }),
-    wallet: text({
-      label: '區塊鏈錢包'
-    }),
     email: text({
+      label: 'Email',
       validation: { isRequired: false },
       isFilterable: true,
       isIndexed: 'unique',
     }),
     is_active: checkbox({
+      label: '啟用',
       defaultValue: true,
     }),
     verified: checkbox({
+      label: '已驗證',
       defaultValue: false,
     }),
-    // publisher: relationship({
-    //   label: "媒體管理員",
-    //   ref: "Publisher.admin",
-    //   many: true
-    // }),
-    // pick: relationship({
-    //   ref: 'Pick.member',
-    //   many: true,
-    // }),
-    // sponsor: relationship({
-    //   label: 'Sponsors',
-    //   ref: 'Sponsorship.sponsor',
-    //   many: true,
-    // }),
-    // transaction: relationship({
-    //   label: 'Transactions',
-    //   ref: 'Transaction.member',
-    //   many: true,
-    // }),
     comment: relationship({
+      label: '留言',
       ref: 'Comment.member',
       many: true,
     }),
     member_like: relationship({
+      label: '按讚',
       ref: 'Comment.like',
       many: true,
     }),
+    posts: relationship({
+      label: '文章',
+      ref: 'Post.author',
+      many: true,
+    }),
+    reactions: relationship({
+      label: '反應',
+      ref: 'Reaction.member',
+      many: true,
+    }),
     follower: relationship({
+      label: '粉絲',
       ref: 'Member.following',
       many: true,
     }),
     following: relationship({
+      label: '追蹤中',
       ref: 'Member.follower',
       many: true,
     }),
     block: relationship({
+      label: '封鎖',
       ref: 'Member.blocked',
       many: true,
     }),
     blocked: relationship({
+      label: '被封鎖',
       ref: 'Member.block',
       many: true,
     }),
     following_category: relationship({
+      label: '追蹤分類',
       ref: 'Category',
       many: true,
-    }),
-    // following_collection: relationship({
-    //   ref: 'Collection',
-    //   many: true,
-    // }),
-    // follow_publisher: relationship({
-    //   label: "追蹤媒體",
-    //   ref: 'Publisher.follower',
-    //   many: true,
-    // }),
-    // exclude_publisher: relationship({
-    //   label: "排除媒體",
-    //   ref: 'Publisher.exclude_follower',
-    //   many: true,
-    // }),
-    // invited: relationship({
-    //   ref: 'InvitationCode.send',
-    //   many: true,
-    // }),
-    // invited_by: relationship({
-    //   ref: 'InvitationCode.receive',
-    //   many: false,
-    // }),
-    // create_collection: relationship({
-    //   ref: 'CollectionMember.added_by',
-    //   many: true,
-    // }),
-    // modify_collection: relationship({
-    //   ref: 'CollectionMember.updated_by',
-    //   many: true,
-    // }),
-    balance: integer({
-      label: '錢包餘額(此為後端寫入之鏈下資料)',
-      defaultValue: 0,
-      ui: {
-        createView: {fieldMode: "hidden"},
-      }
     }),
     language: select({
       label: '語系',
       type: 'enum',
       options: [
-        {label: "中文-台灣", value: "zh_TW"},
-        {label: "中文-中國", value: "zh_CN"},
-        {label: "英文-美國", value: "en_US"},
-        {label: "英文-英國", value: "en_GB"},
-        {label: "日文-日本", value: "ja_JP"},
-        {label: "法文-法國", value: "fr_FR"},
-        {label: "德文-德國", value: "de_DE"},
+        { label: '中文', value: 'zh' },
+        { label: 'English (英文)', value: 'en' },
+        { label: 'Tiếng Việt (越南文)', value: 'vi' },
+        { label: 'Bahasa Indonesia (印尼文)', value: 'id' },
+        { label: 'ภาษาไทย (泰文)', value: 'th' },
       ],
-      defaultValue: "zh_TW",
+      defaultValue: 'zh',
     }),
-    // ActivityPub 設定
-    // activitypub_enabled: checkbox({
-    //   defaultValue: false,
-    // }),
-    // activitypub_auto_follow: checkbox({
-    //   defaultValue: true,
-    // }),
-    // activitypub_public_posts: checkbox({
-    //   defaultValue: true,
-    // }),
-    // activitypub_federation_enabled: checkbox({
-    //   defaultValue: true,
-    // }),
   },
   ui: {
+    label: '會員',
     listView: {
       initialColumns: ['name', 'email'],
     },

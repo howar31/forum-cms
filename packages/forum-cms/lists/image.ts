@@ -15,6 +15,7 @@ const listConfigurations = list({
       validation: { isRequired: true },
     }),
     file: image({
+      label: '檔案',
       storage: 'images',
       ui: { views: './lists/views/custom-image/index' },
     }),
@@ -56,7 +57,7 @@ const listConfigurations = list({
             })
           }
 
-          const rtn : Record<string, string> = {}
+          const rtn: Record<string, string> = {}
           const filename = item?.file_id
 
           if (!filename) {
@@ -174,6 +175,7 @@ const listConfigurations = list({
       },
     }),
     urlOriginal: text({
+      label: '原始連結',
       ui: {
         createView: { fieldMode: 'hidden' },
         // itemView: { fieldMode: 'read' },
@@ -181,9 +183,10 @@ const listConfigurations = list({
     }),
   },
   ui: {
+    label: '圖片',
     listView: {
       initialColumns: ['name', 'urlOriginal'],
-      initialSort: { field: 'updatedAt', direction: 'ASC' },
+      initialSort: { field: 'name', direction: 'ASC' },
       pageSize: 50,
     },
   },

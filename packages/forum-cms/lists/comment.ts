@@ -18,36 +18,61 @@ const {
 } = utils.accessControl
 
 
-const listConfigurations = list ({
+const listConfigurations = list({
   fields: {
-	member: relationship({ ref: 'Member.comment', many: false }),
-	story: relationship({ ref: 'Story.comment', many: false }),
+    member: relationship({ ref: 'Member.comment', many: false }),
     // collection: relationship({ ref: 'Collection.comment', many: false }),
-    content: text({ validation: { isRequired: false } }),
-	parent: relationship({ ref: 'Comment', many: false }),
-	root: relationship({ ref: 'Comment', many: false }),
-	like: relationship({ ref: 'Member.member_like', many: true }),
-	state: select({
-	  label: '狀態',
-	  datatype: 'enum',
-	  options: [ 
-		{ label: '公開', value: 'public' }, 
-		{ label: '私藏', value: 'private' },
-		{ label: '限好友', value: 'friend' }
+    // collection: relationship({ ref: 'Collection.comment', many: false }),
+    content: text({ validation: { isRequired: false }, label: '內容' }),
+    content_zh: text({
+      label: '內容（中文）',
+      ui: { displayMode: 'textarea' },
+    }),
+    content_en: text({
+      label: '內容（英文）',
+      ui: { displayMode: 'textarea' },
+    }),
+    content_vi: text({
+      label: '內容（越南文）',
+      ui: { displayMode: 'textarea' },
+    }),
+    content_id: text({
+      label: '內容（印尼文）',
+      ui: { displayMode: 'textarea' },
+    }),
+    content_th: text({
+      label: '內容（泰文）',
+      ui: { displayMode: 'textarea' },
+    }),
+    post: relationship({ ref: 'Post.comments', many: false, label: '文章' }),
+    reactions: relationship({ ref: 'Reaction.comment', many: true, label: '反應' }),
+    parent: relationship({ ref: 'Comment', many: false, label: '父留言' }),
+    root: relationship({ ref: 'Comment', many: false, label: '根留言' }),
+    like: relationship({ ref: 'Member.member_like', many: true, label: '按讚' }),
+    state: select({
+      label: '狀態',
+      type: 'enum',
+      options: [
+        { label: '公開', value: 'public' },
+        { label: '私藏', value: 'private' },
+        { label: '限好友', value: 'friend' }
       ],
-	 defaultValue: 'public',
-	}),
-    published_date: timestamp({ validation: { isRequired: false } }),
+      defaultValue: 'public',
+    }),
+    published_date: timestamp({ validation: { isRequired: false }, label: '發布時間' }),
     is_edited: checkbox({
       defaultValue: false,
+      label: '已編輯',
     }),
     is_active: checkbox({
       defaultValue: true,
+      label: '啟用',
     }),
   },
   ui: {
+    label: '留言',
     listView: {
-      initialColumns: ['title', 'url'],
+      initialColumns: ['content', 'member', 'published_date'],
     },
   },
   access: {

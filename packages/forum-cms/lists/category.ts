@@ -17,17 +17,19 @@ const {
   owner,
 } = utils.accessControl
 
-const listConfigurations = list ({
+const listConfigurations = list({
   fields: {
-    title: text({ validation: { isRequired: false } }),
-    slug: text({ validation: { isUnique:true, isRequired: true } }),
-    summary: text({ validation: { isRequired: false } }),
+    title: text({ validation: { isRequired: false }, label: '標題' }),
+    slug: text({ isIndexed: 'unique', validation: { isRequired: true }, label: '網址代碼' }),
+    summary: text({ validation: { isRequired: false }, label: '摘要' }),
     priority: integer({
-      validation: {isRequired: true, min: 0},
+      label: '排序權重',
+      validation: { isRequired: true, min: 0 },
       defaultValue: 0,
     }),
   },
   ui: {
+    label: '分類',
     listView: {
       initialColumns: ['title', 'slug'],
     },
