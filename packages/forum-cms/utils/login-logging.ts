@@ -7,6 +7,96 @@ import {
 } from './account-lockout'
 import { GraphQLError } from 'graphql'
 
+const LOGIN_IDENTITY_KEYS = ['identity', 'email', 'username']
+const USER_QUERY_FIELDS =
+  'id email name loginFailedAttempts accountLockedUntil lastFailedLoginAt passwordUpdatedAt mustChangePassword'
+
+function readIdentityFromSource(source: any): string | undefined {
+  if (!source || typeof source !== 'object') {
+    return undefined
+  }
+
+  for (const key of LOGIN_IDENTITY_KEYS) {
+    const value = source[key]
+    if (typeof value === 'string' && value.length > 0) {
+      return value
+    }
+  }
+
+  return undefined
+}
+
+function extractIdentity(requestContext: any): string | undefined {
+  const candidates = [
+    requestContext.request?.variables,
+    requestContext.contextValue?.req?.body?.variables,
+  ]
+
+  for (const candidate of candidates) {
+    const identity = readIdentityFromSource(candidate)
+    if (identity) {
+      return identity
+    }
+  }
+
+  return undefined
+}
+
+async function findUserByIdentity(contextValue: any, identity: string | undefined) {
+  if (!identity || !contextValue) {
+    return null
+  }
+
+  const trimmed = identity.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const queryArgs = {
+    query: USER_QUERY_FIELDS,
+  }
+
+  try {
+    const user = await contextValue.sudo().query.User.findOne({
+      where: { email: trimmed },
+      ...queryArgs,
+    })
+
+    if (user) {
+      return user
+    }
+  } catch (error) {
+    console.error('findUserByIdentity: unique lookup failed', error)
+  }
+
+  const alternativeFilters: any[] = [
+    { email: { equals: trimmed, mode: 'insensitive' } },
+    { name: { equals: trimmed, mode: 'insensitive' } },
+  ]
+
+  if (!trimmed.includes('@')) {
+    alternativeFilters.push({ email: { startsWith: trimmed, mode: 'insensitive' } })
+  }
+
+  try {
+    const candidates = await contextValue
+      .sudo()
+      .query.User.findMany({
+        where: { OR: alternativeFilters },
+        take: 1,
+        ...queryArgs,
+      })
+
+    if (Array.isArray(candidates) && candidates.length > 0) {
+      return candidates[0]
+    }
+  } catch (error) {
+    console.error('findUserByIdentity: fallback lookup failed', error)
+  }
+
+  return null
+}
+
 export const createLoginLoggingPlugin = () => {
   return {
     async requestDidStart(requestContext: any) {
@@ -29,16 +119,12 @@ export const createLoginLoggingPlugin = () => {
       // This avoids throwing in requestDidStart which causes a 500 error
       let lockoutError: GraphQLError | null = null;
 
-      if (isAuthRequest && requestContext.request?.variables) {
-        // KeystoneJS uses 'identity' not 'email'
-        const identity = requestContext.request.variables.identity
+      if (isAuthRequest) {
+        const identity = extractIdentity(requestContext)
 
         if (identity && requestContext.contextValue) {
           try {
-            const user = await requestContext.contextValue.sudo().query.User.findOne({
-              where: { email: identity },
-              query: 'id loginFailedAttempts accountLockedUntil lastFailedLoginAt',
-            })
+            const user = await findUserByIdentity(requestContext.contextValue, identity)
 
             if (user) {
               // Check if account is locked
@@ -123,16 +209,13 @@ export const createLoginLoggingPlugin = () => {
                   let extraUserData: any = {};
                   // For failed logins, result.item is undefined, so get email from request variables
                   // KeystoneJS uses 'identity' and 'secret' as variable names, not 'email' and 'password'
-                  let userEmail = result.item?.email || requestContext.request?.variables?.identity;
+                  let userEmail = result.item?.email || extractIdentity(requestContext);
 
                   // Update lockout data based on authentication result
                   if (contextValue && userEmail) {
                     try {
                       // Find the user to update lockout data
-                      const user = await contextValue.sudo().query.User.findOne({
-                        where: { email: userEmail },
-                        query: 'id email name loginFailedAttempts accountLockedUntil lastFailedLoginAt passwordUpdatedAt mustChangePassword',
-                      })
+                      const user = await findUserByIdentity(contextValue, userEmail)
 
                       if (user) {
                         // Calculate lockout data update
@@ -146,7 +229,10 @@ export const createLoginLoggingPlugin = () => {
 
                         // Prepare extra data for logging
                         const needsPasswordUpdate = isPasswordExpired(user)
-                        const isLocked = isAccountLocked({ ...user, ...lockoutData })
+                        const updatedUserState = { ...user, ...lockoutData }
+                        const isLocked = isAccountLocked(updatedUserState)
+                        const failureNotice =
+                          !isSuccess && getLoginFailureMessage(updatedUserState, isLocked)
 
                         extraUserData = {
                           userName: user.name,
@@ -161,6 +247,13 @@ export const createLoginLoggingPlugin = () => {
                         // If account is locked, set header to trigger redirect
                         if (isLocked && requestContext.contextValue?.res) {
                           requestContext.contextValue.res.setHeader('X-Account-Locked', 'true')
+                        }
+
+                        if (!isSuccess && failureNotice && requestContext.contextValue?.res) {
+                          requestContext.contextValue.res.setHeader(
+                            'X-Login-Failure-Message',
+                            encodeURIComponent(failureNotice)
+                          )
                         }
 
                         // If user needs to change password, modify the response
@@ -230,6 +323,7 @@ export const createLoginLoggingPlugin = () => {
                       }
                       : {
                         failureReason: result.message || 'Unknown error',
+                        identity: extractIdentity(requestContext),
                         loginFailedAttempts: extraUserData.loginFailedAttempts,
                         accountLocked: extraUserData.accountLocked,
                       }),
