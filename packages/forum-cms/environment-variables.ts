@@ -19,6 +19,14 @@ const {
   CACHE_MAXAGE,
   CACHE_CONNECT_TIMEOUT,
   INVALID_CDN_CACHE_SERVER_URL,
+  SMTP_HOST,
+  SMTP_PORT,
+  SMTP_USERNAME,
+  SMTP_PASSWORD,
+  SMTP_SECURE,
+  PASSWORD_RESET_EMAIL_FROM,
+  PASSWORD_RESET_LINK_BASE_URL,
+  PASSWORD_RESET_TOKEN_TTL_MINUTES,
 } = process.env
 
 enum DatabaseProvider {
@@ -28,6 +36,8 @@ enum DatabaseProvider {
 
 const cacheMaxAge = Number(CACHE_MAXAGE)
 const cacheConnectTimeout = Number(CACHE_CONNECT_TIMEOUT)
+const smtpPort = Number(SMTP_PORT)
+const passwordResetTokenTtl = Number(PASSWORD_RESET_TOKEN_TTL_MINUTES)
 
 export default {
   isUIDisabled: IS_UI_DISABLED === 'true',
@@ -73,4 +83,16 @@ export default {
     maxAge: Number.isNaN(cacheMaxAge) ? 60 : cacheMaxAge, // unit: second
   },
   invalidateCDNCacheServerURL: INVALID_CDN_CACHE_SERVER_URL,
+  email: {
+    smtpHost: SMTP_HOST || '',
+    smtpPort: Number.isNaN(smtpPort) ? 587 : smtpPort,
+    smtpSecure: SMTP_SECURE === 'true',
+    smtpUser: SMTP_USERNAME || '',
+    smtpPassword: SMTP_PASSWORD || '',
+    from: PASSWORD_RESET_EMAIL_FROM || 'no-reply@example.com',
+  },
+  passwordReset: {
+    baseUrl: PASSWORD_RESET_LINK_BASE_URL || 'http://localhost:3000',
+    tokensValidForMins: Number.isNaN(passwordResetTokenTtl) ? 30 : passwordResetTokenTtl,
+  },
 }

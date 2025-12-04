@@ -10,7 +10,7 @@ import Keyv from 'keyv'
 import { KeyvAdapter } from '@apollo/utils.keyvadapter'
 import { ApolloServerPluginCacheControl } from '@apollo/server/plugin/cacheControl'
 import responseCachePlugin from '@apollo/server-plugin-response-cache'
-import { GraphQLConfig, KeystoneContext } from '@keystone-6/core/types'
+import { KeystoneContext } from '@keystone-6/core/types'
 import { utils } from '@mirrormedia/lilith-core'
 import { createLoginLoggingPlugin } from './utils/login-logging'
 import { assertPasswordStrength, isPasswordExpired, passwordPolicy } from './utils/password-policy'
@@ -20,6 +20,7 @@ import {
   getAccountLockoutData,
   getLoginFailureMessage,
 } from './utils/account-lockout'
+import { sendPasswordResetEmail } from './utils/password-reset'
 
 // 获取 createLoginLoggingPlugin 函数（兼容新旧版本）
 // const createLoginLoggingPlugin =
@@ -34,6 +35,27 @@ const { withAuth } = createAuth({
   identityField: 'email',
   sessionData: 'id name role passwordUpdatedAt mustChangePassword accountLockedUntil',
   secretField: 'password',
+  passwordResetLink: {
+    async sendToken({ identity, token }) {
+      if (typeof identity !== 'string' || identity.length === 0) {
+        return
+      }
+
+      try {
+        await sendPasswordResetEmail({ email: identity, token })
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            severity: 'ERROR',
+            message: 'Failed to send password reset email',
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString(),
+          })
+        )
+      }
+    },
+    tokensValidForMins: envVar.passwordReset.tokensValidForMins,
+  },
   initFirstItem: {
     // If there are no items in the database, keystone will ask you to create
     // a new user, filling in these fields.
@@ -45,6 +67,8 @@ const session = statelessSessions(envVar.session)
 
 const CHANGE_PASSWORD_PATH = '/change-password'
 const ACCOUNT_LOCKED_PATH = '/account-locked'
+const FORGOT_PASSWORD_PATH = '/forgot-password'
+const RESET_PASSWORD_PATH = '/reset-password'
 const MIN_PASSWORD_LENGTH = passwordPolicy.minLength
 const PASSWORD_REQUIREMENT_MESSAGE = passwordPolicy.requirementsMessage
 
@@ -620,6 +644,768 @@ export default function ChangePasswordPage() {
 }
 `
 
+const forgotPasswordPageTemplate = String.raw`
+import { FormEvent, useState } from 'react';
+import Head from 'next/head';
+
+const REQUEST_PASSWORD_RESET_MUTATION = ${JS_BACKTICK}
+  mutation SendUserPasswordResetLink($email: String!) {
+    sendUserPasswordResetLink(email: $email)
+  }
+${JS_BACKTICK};
+
+export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setStatus('error');
+      setMessage('請輸入電子郵件');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatus('idle');
+    setMessage('');
+
+    try {
+      const response = await fetch('/api/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          query: REQUEST_PASSWORD_RESET_MUTATION,
+          variables: { email: trimmedEmail },
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.errors) {
+        throw new Error(result.errors[0]?.message ?? '送出失敗');
+      }
+
+      setStatus('success');
+      setMessage('若信箱存在，我們會寄送重設密碼信件。請檢查信箱與垃圾郵件。');
+    } catch (error) {
+      console.error(error);
+      setStatus('error');
+      setMessage('寄送失敗，請稍後再試。');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <Head>
+        <title>忘記密碼</title>
+      </Head>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(135deg, #0f172a, #1e293b)',
+          padding: '24px',
+        }}
+      >
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '480px',
+            background: '#ffffff',
+            borderRadius: '16px',
+            boxShadow: '0 20px 50px rgba(15, 23, 42, 0.2)',
+            padding: '40px',
+          }}
+        >
+          <h1 style={{ margin: '0 0 12px', fontSize: '28px', color: '#0f172a', fontWeight: 700 }}>
+            忘記密碼
+          </h1>
+          <p style={{ margin: '0 0 24px', color: '#64748b', lineHeight: 1.6 }}>
+            輸入帳號使用的電子郵件，我們會寄送一次性重設密碼連結給您。
+          </p>
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: '20px' }}>
+              <label
+                htmlFor="email"
+                style={{ display: 'block', marginBottom: '8px', color: '#475569', fontWeight: 600 }}
+              >
+                電子郵件
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '16px',
+                }}
+                placeholder="name@example.com"
+              />
+            </div>
+            {message && (
+              <div
+                style={{
+                  marginBottom: '16px',
+                  color: status === 'error' ? '#dc2626' : '#059669',
+                  background: status === 'error' ? '#fee2e2' : '#d1fae5',
+                  padding: '12px',
+                  borderRadius: '8px',
+                }}
+              >
+                {message}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '12px',
+                border: 'none',
+                background: '#0f172a',
+                color: '#ffffff',
+                fontSize: '16px',
+                fontWeight: 600,
+                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                opacity: isSubmitting ? 0.7 : 1,
+                transition: 'opacity 0.2s',
+              }}
+            >
+              {isSubmitting ? '寄送中...' : '寄送重設連結'}
+            </button>
+          </form>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = '/signin';
+            }}
+            style={{
+              marginTop: '16px',
+              width: '100%',
+              padding: '14px',
+              borderRadius: '12px',
+              border: '1px solid #cbd5e1',
+              background: 'transparent',
+              color: '#475569',
+              fontSize: '16px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            返回登入頁
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+`
+
+const resetPasswordPageTemplate = String.raw`
+import { FormEvent, useEffect, useState } from 'react';
+import Head from 'next/head';
+
+const VALIDATE_PASSWORD_RESET_TOKEN = ${JS_BACKTICK}
+  query ValidateUserPasswordResetToken($email: String!, $token: String!) {
+    validateUserPasswordResetToken(email: $email, token: $token) {
+      code
+      message
+    }
+  }
+${JS_BACKTICK};
+
+const REDEEM_PASSWORD_RESET_TOKEN = ${JS_BACKTICK}
+  mutation RedeemUserPasswordResetToken($email: String!, $token: String!, $password: String!) {
+    redeemUserPasswordResetToken(email: $email, token: $token, password: $password) {
+      code
+      message
+    }
+  }
+${JS_BACKTICK};
+
+export default function ResetPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [token, setToken] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [isValidating, setIsValidating] = useState(true);
+  const [validationError, setValidationError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get('token') ?? '';
+    const emailParam = params.get('email') ?? '';
+
+    setToken(tokenParam);
+    setEmail(emailParam);
+  }, []);
+
+  useEffect(() => {
+    if (!email || !token) {
+      setValidationError('重設連結不完整或已失效，請重新申請。');
+      setIsValidating(false);
+      return;
+    }
+
+    const validate = async () => {
+      setIsValidating(true);
+      try {
+        const response = await fetch('/api/graphql', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            query: VALIDATE_PASSWORD_RESET_TOKEN,
+            variables: { email, token },
+          }),
+        });
+
+        const result = await response.json();
+        const validationResult = result.data?.validateUserPasswordResetToken;
+
+        if (validationResult) {
+          setValidationError(validationResult.message);
+        } else {
+          setValidationError('');
+        }
+      } catch (error) {
+        console.error(error);
+        setValidationError('驗證失敗，請稍後再試。');
+      } finally {
+        setIsValidating(false);
+      }
+    };
+
+    validate();
+  }, [email, token]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (validationError) {
+      return;
+    }
+
+    const trimmedPassword = password.trim();
+    const trimmedConfirm = confirmPassword.trim();
+
+    if (!trimmedPassword) {
+      setStatus('error');
+      setMessage('請輸入新密碼');
+      return;
+    }
+
+    if (trimmedPassword !== trimmedConfirm) {
+      setStatus('error');
+      setMessage('兩次輸入的密碼不一致');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatus('idle');
+    setMessage('');
+
+    try {
+      const response = await fetch('/api/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          query: REDEEM_PASSWORD_RESET_TOKEN,
+          variables: { email, token, password: trimmedPassword },
+        }),
+      });
+
+      const result = await response.json();
+      const resetResult = result.data?.redeemUserPasswordResetToken;
+
+      if (resetResult) {
+        setStatus('error');
+        setMessage(resetResult.message);
+      } else {
+        setStatus('success');
+        setMessage('密碼重設成功，即將導向登入頁。');
+        setTimeout(() => {
+          window.location.replace('/signin');
+        }, 2000);
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus('error');
+      setMessage('重設失敗，請稍後再試。');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <Head>
+        <title>重設密碼</title>
+      </Head>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(135deg, #0f172a, #1e293b)',
+          padding: '24px',
+        }}
+      >
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '480px',
+            background: '#ffffff',
+            borderRadius: '16px',
+            boxShadow: '0 20px 50px rgba(15, 23, 42, 0.2)',
+            padding: '40px',
+          }}
+        >
+          <h1 style={{ margin: '0 0 12px', fontSize: '28px', color: '#0f172a', fontWeight: 700 }}>
+            重設密碼
+          </h1>
+          {isValidating ? (
+            <p style={{ color: '#64748b' }}>驗證連結中...</p>
+          ) : validationError ? (
+            <div
+              style={{
+                color: '#dc2626',
+                background: '#fee2e2',
+                padding: '12px',
+                borderRadius: '8px',
+              }}
+            >
+              {validationError}
+              <div style={{ marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = '/forgot-password';
+                  }}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    background: '#ffffff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  重新申請重設連結
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: '20px' }}>
+                <label
+                  htmlFor="password"
+                  style={{ display: 'block', marginBottom: '8px', color: '#475569', fontWeight: 600 }}
+                >
+                  新密碼
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    borderRadius: '12px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '16px',
+                  }}
+                />
+              </div>
+              <div style={{ marginBottom: '20px' }}>
+                <label
+                  htmlFor="confirmPassword"
+                  style={{ display: 'block', marginBottom: '8px', color: '#475569', fontWeight: 600 }}
+                >
+                  再次輸入新密碼
+                </label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    borderRadius: '12px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '16px',
+                  }}
+                />
+              </div>
+              {message && (
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    color: status === 'error' ? '#dc2626' : '#059669',
+                    background: status === 'error' ? '#fee2e2' : '#d1fae5',
+                    padding: '12px',
+                    borderRadius: '8px',
+                  }}
+                >
+                  {message}
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                  opacity: isSubmitting ? 0.7 : 1,
+                  transition: 'opacity 0.2s',
+                }}
+              >
+                {isSubmitting ? '重設中...' : '更新密碼'}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+`
+
+const signinPageTemplate = String.raw`
+import { FormEvent, useState } from 'react';
+import Head from 'next/head';
+
+const AUTHENTICATE_MUTATION = ${JS_BACKTICK}
+  mutation AuthenticateUserWithPassword($identity: String!, $password: String!) {
+    authenticateUserWithPassword(email: $identity, password: $password) {
+      __typename
+      ... on UserAuthenticationWithPasswordSuccess {
+        item {
+          id
+          name
+        }
+      }
+      ... on UserAuthenticationWithPasswordFailure {
+        message
+      }
+    }
+  }
+${JS_BACKTICK};
+
+function redirect(path: string) {
+  if (typeof window !== 'undefined') {
+    window.location.replace(path);
+  }
+}
+
+function redirectToAccountLocked() {
+  try {
+    localStorage.setItem('keystone-lockout-until', (Date.now() + 15 * 60 * 1000).toString());
+  } catch (error) {
+    console.warn('Failed to persist lockout timestamp', error);
+  }
+  redirect('${ACCOUNT_LOCKED_PATH}');
+}
+
+function hasAccountLockedError(result: any) {
+  if (!result) return false;
+  if (Array.isArray(result.errors)) {
+    return result.errors.some(
+      (error: any) => error?.extensions?.code === 'ACCOUNT_LOCKED'
+    );
+  }
+  const authResult = result.data?.authenticateUserWithPassword;
+  if (authResult?.message && typeof authResult.message === 'string') {
+    return authResult.message.includes('鎖定') || authResult.message.toLowerCase().includes('lock');
+  }
+  return false;
+}
+
+export default function SigninPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [status, setStatus] = useState<'idle' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail || !trimmedPassword) {
+      setStatus('error');
+      setMessage('請輸入帳號與密碼');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatus('idle');
+    setMessage('');
+
+    try {
+      const response = await fetch('/api/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          query: AUTHENTICATE_MUTATION,
+          variables: { identity: trimmedEmail, password: trimmedPassword },
+          operationName: 'AuthenticateUserWithPassword',
+        }),
+      });
+
+      const headerLocked = response.headers?.get('X-Account-Locked') === 'true';
+      const requirePasswordChange = response.headers?.get('X-Require-Password-Change') === 'true';
+      const failureHeader = response.headers?.get('X-Login-Failure-Message');
+
+      const result = await response.json();
+
+      if (headerLocked || hasAccountLockedError(result)) {
+        redirectToAccountLocked();
+        return;
+      }
+
+      if (requirePasswordChange) {
+        redirect('${CHANGE_PASSWORD_PATH}');
+        return;
+      }
+
+      const authResult = result.data?.authenticateUserWithPassword;
+
+      if (authResult?.__typename === 'UserAuthenticationWithPasswordSuccess') {
+        redirect('/');
+        return;
+      }
+
+      const failureMessage =
+        (failureHeader ? decodeURIComponent(failureHeader) : undefined) ||
+        authResult?.message ||
+        result.errors?.[0]?.message ||
+        '登入失敗，請確認帳號密碼是否正確。';
+
+      setStatus('error');
+      setMessage(failureMessage);
+    } catch (error) {
+      console.error(error);
+      setStatus('error');
+      setMessage('登入失敗，請稍後再試。');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <Head>
+        <title>登入 RTI Forum CMS</title>
+      </Head>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(135deg, #0f172a, #1e293b)',
+          padding: '24px',
+        }}
+      >
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '448px',
+            background: '#ffffff',
+            borderRadius: '16px',
+            boxShadow: '0 20px 50px rgba(15, 23, 42, 0.2)',
+            padding: '40px',
+          }}
+        >
+          <h1
+            style={{
+              margin: '0 0 12px',
+              fontSize: '28px',
+              color: '#0f172a',
+              fontWeight: 700,
+            }}
+          >
+            RTI Forum CMS
+          </h1>
+          <p style={{ margin: '0 0 24px', color: '#64748b', lineHeight: 1.6 }}>
+            請輸入帳號與密碼以登入管理後台。
+          </p>
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: '20px' }}>
+              <label
+                htmlFor="email"
+                style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  color: '#475569',
+                  fontWeight: 600,
+                }}
+              >
+                電子郵件
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '16px',
+                }}
+                placeholder="name@example.com"
+              />
+            </div>
+            <div style={{ marginBottom: '20px' }}>
+              <label
+                htmlFor="password"
+                style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  color: '#475569',
+                  fontWeight: 600,
+                }}
+              >
+                密碼
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '16px',
+                }}
+                placeholder="請輸入密碼"
+              />
+            </div>
+            {message && (
+              <div
+                style={{
+                  marginBottom: '16px',
+                  color: '#dc2626',
+                  background: '#fee2e2',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  lineHeight: 1.5,
+                }}
+              >
+                {message}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '12px',
+                border: 'none',
+                background: '#0f172a',
+                color: '#ffffff',
+                fontSize: '16px',
+                fontWeight: 600,
+                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                opacity: isSubmitting ? 0.7 : 1,
+                transition: 'opacity 0.2s',
+              }}
+            >
+              {isSubmitting ? '登入中...' : '登入'}
+            </button>
+          </form>
+          <div
+            style={{
+              marginTop: '16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              color: '#475569',
+              fontSize: '14px',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => redirect('${FORGOT_PASSWORD_PATH}')}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#2563eb',
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              忘記密碼？
+            </button>
+            <button
+              type="button"
+              onClick={() => redirect('${ACCOUNT_LOCKED_PATH}')}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#2563eb',
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              帳號被鎖了？
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+`
+
 const passwordEnforcerClientScript = `
 (function () {
   var CHANGE_PATH = '${CHANGE_PASSWORD_PATH}';
@@ -933,10 +1719,10 @@ const graphqlConfig = {
       }
       : {}),
   } as any,
-} as GraphQLConfig
+  extendGraphqlSchema: passwordSchemaExtension,
+}
 
-export default withAuth(
-  config({
+const baseKeystoneConfig = config({
     db: {
       provider: envVar.database.provider,
       url: envVar.database.url,
@@ -959,6 +1745,14 @@ export default withAuth(
 
         // Allow access to account locked page without session
         if (path === ACCOUNT_LOCKED_PATH || path.indexOf(ACCOUNT_LOCKED_PATH) === 0) {
+          return true;
+        }
+
+        if (path === FORGOT_PASSWORD_PATH || path.indexOf(FORGOT_PASSWORD_PATH) === 0) {
+          return true;
+        }
+
+        if (path === RESET_PASSWORD_PATH || path.indexOf(RESET_PASSWORD_PATH) === 0) {
           return true;
         }
 
@@ -986,6 +1780,21 @@ export default withAuth(
           },
           {
             mode: 'write' as const,
+            outputPath: 'pages/signin.tsx',
+            src: signinPageTemplate,
+          },
+          {
+            mode: 'write' as const,
+            outputPath: 'pages/forgot-password.tsx',
+            src: forgotPasswordPageTemplate,
+          },
+          {
+            mode: 'write' as const,
+            outputPath: 'pages/reset-password.tsx',
+            src: resetPasswordPageTemplate,
+          },
+          {
+            mode: 'write' as const,
             outputPath: 'pages/account-locked.tsx',
             src: accountLockedPageTemplate,
           },
@@ -1000,7 +1809,6 @@ export default withAuth(
     graphql: graphqlConfig as any,
     lists,
     session,
-    extendGraphqlSchema: passwordSchemaExtension,
     storage: {
       files: {
         kind: 'local',
@@ -1022,13 +1830,13 @@ export default withAuth(
       },
     },
     server: {
-      healthCheck: {
-        path: '/health_check',
-        data: { status: 'healthy' },
-      },
       maxFileSize: 2000 * 1024 * 1024,
       extendExpressApp: (app, context) => {
         app.use(express.json({ limit: '500mb' }))
+
+        app.get('/health_check', (_req, res) => {
+          res.status(200).json({ status: 'healthy' })
+        })
 
         app.use(async (req, res, next) => {
           try {
@@ -1038,6 +1846,8 @@ export default withAuth(
               req.method !== 'GET' ||
               path === CHANGE_PASSWORD_PATH ||
               path === ACCOUNT_LOCKED_PATH ||
+              path === FORGOT_PASSWORD_PATH ||
+              path === RESET_PASSWORD_PATH ||
               path === '/signin' ||
               path === '/init' ||
               path === '/health_check' ||
@@ -1108,4 +1918,19 @@ export default withAuth(
       },
     },
   })
-)
+
+const keystone = withAuth(baseKeystoneConfig)
+
+if (keystone.ui?.getAdditionalFiles?.length) {
+  keystone.ui.getAdditionalFiles = keystone.ui.getAdditionalFiles.map((getFiles) => {
+    return async () => {
+      const files = await getFiles()
+      if (!Array.isArray(files)) {
+        return files
+      }
+      return files.filter((file) => file.outputPath !== 'pages/signin.js')
+    }
+  })
+}
+
+export default keystone
