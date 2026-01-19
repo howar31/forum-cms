@@ -1,4 +1,6 @@
 import admin from 'firebase-admin'
+import fs from 'fs'
+import path from 'path'
 import envVar from '../environment-variables'
 
 let firebaseApp: admin.app.App | null = null
@@ -6,7 +8,16 @@ let firebaseApp: admin.app.App | null = null
 function parseServiceAccount() {
   const rawJson = envVar.firebase.serviceAccountJson?.trim()
   if (rawJson) {
-    return JSON.parse(rawJson)
+    const filePath = path.isAbsolute(rawJson)
+      ? rawJson
+      : path.resolve(process.cwd(), rawJson)
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Firebase service account file not found: ${filePath}`)
+    }
+
+    const fileContent = fs.readFileSync(filePath, 'utf8')
+    return JSON.parse(fileContent)
   }
 
   const rawBase64 = envVar.firebase.serviceAccountBase64?.trim()
@@ -53,5 +64,8 @@ export async function verifyFirebaseIdToken(idToken: string) {
   }
 
   const app = getFirebaseApp()
+  if (!app) {
+    throw new Error('Firebase app is not initialized')
+  }
   return admin.auth(app).verifyIdToken(idToken)
 }

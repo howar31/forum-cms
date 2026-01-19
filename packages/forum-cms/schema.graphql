@@ -1102,6 +1102,7 @@ type Mutation {
   sendUserPasswordResetLink(email: String!): Boolean!
   redeemUserPasswordResetToken(email: String!, token: String!, password: String!): RedeemUserPasswordResetTokenResult
   changeMyPassword(data: ChangeMyPasswordInput!): ChangeMyPasswordResult!
+  authenticateMemberWithFirebase(data: AuthenticateMemberWithFirebaseInput!): AuthenticateMemberWithFirebaseResult!
 }
 
 type ChangeMyPasswordResult {
@@ -1112,6 +1113,28 @@ type ChangeMyPasswordResult {
 input ChangeMyPasswordInput {
   password: String!
   confirmPassword: String!
+}
+
+type AuthenticateMemberWithFirebaseResult {
+  sessionToken: String!
+  expiresAt: String!
+  member: MemberSessionMember!
+}
+
+type MemberSessionMember {
+  id: ID!
+  firebaseId: String!
+  customId: String!
+  name: String!
+  nickname: String!
+  email: String
+}
+
+input AuthenticateMemberWithFirebaseInput {
+  idToken: String!
+  name: String
+  nickname: String
+  customId: String
 }
 
 union UserAuthenticationWithPasswordResult = UserAuthenticationWithPasswordSuccess | UserAuthenticationWithPasswordFailure
@@ -1171,6 +1194,7 @@ type Query {
   keystone: KeystoneMeta!
   authenticatedItem: AuthenticatedItem
   validateUserPasswordResetToken(email: String!, token: String!): ValidateUserPasswordResetTokenResult
+  authenticatedMember: MemberSessionMember
 }
 
 union AuthenticatedItem = User
