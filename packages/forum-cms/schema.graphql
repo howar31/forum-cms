@@ -13,6 +13,7 @@ type User {
   loginFailedAttempts: Int
   accountLockedUntil: DateTime
   lastFailedLoginAt: DateTime
+  passwordHistory: JSON
   passwordResetToken: PasswordState
   passwordResetIssuedAt: DateTime
   passwordResetRedeemedAt: DateTime
@@ -155,6 +156,7 @@ input UserUpdateInput {
   loginFailedAttempts: Int
   accountLockedUntil: DateTime
   lastFailedLoginAt: DateTime
+  passwordHistory: JSON
   passwordResetToken: String
   passwordResetIssuedAt: DateTime
   passwordResetRedeemedAt: DateTime
@@ -176,6 +178,7 @@ input UserCreateInput {
   loginFailedAttempts: Int
   accountLockedUntil: DateTime
   lastFailedLoginAt: DateTime
+  passwordHistory: JSON
   passwordResetToken: String
   passwordResetIssuedAt: DateTime
   passwordResetRedeemedAt: DateTime

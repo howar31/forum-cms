@@ -23,6 +23,7 @@ model User {
   loginFailedAttempts     Int?       @default(0)
   accountLockedUntil      DateTime?
   lastFailedLoginAt       DateTime?
+  passwordHistory         Json?
   passwordResetToken      String?
   passwordResetIssuedAt   DateTime?
   passwordResetRedeemedAt DateTime?

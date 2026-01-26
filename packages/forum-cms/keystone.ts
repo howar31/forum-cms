@@ -1,26 +1,32 @@
-import 'dotenv/config'
-import { config, graphql } from '@keystone-6/core'
-import { listDefinition as lists } from './lists'
-import envVar from './environment-variables'
-import express from 'express'
-import { createAuth } from '@keystone-6/auth'
-import { statelessSessions } from '@keystone-6/core/session'
-import { createPreviewMiniApp } from './express-mini-apps/preview/app'
-import Keyv from 'keyv'
-import { KeyvAdapter } from '@apollo/utils.keyvadapter'
-import { ApolloServerPluginCacheControl } from '@apollo/server/plugin/cacheControl'
-import responseCachePlugin from '@apollo/server-plugin-response-cache'
-import { KeystoneContext } from '@keystone-6/core/types'
-import { utils } from '@mirrormedia/lilith-core'
-import { createLoginLoggingPlugin } from './utils/login-logging'
-import { assertPasswordStrength, isPasswordExpired, passwordPolicy } from './utils/password-policy'
+import "dotenv/config";
+import { config, graphql } from "@keystone-6/core";
+import { listDefinition as lists } from "./lists";
+import envVar from "./environment-variables";
+import express from "express";
+import { createAuth } from "@keystone-6/auth";
+import { statelessSessions } from "@keystone-6/core/session";
+import { createPreviewMiniApp } from "./express-mini-apps/preview/app";
+import Keyv from "keyv";
+import { KeyvAdapter } from "@apollo/utils.keyvadapter";
+import { ApolloServerPluginCacheControl } from "@apollo/server/plugin/cacheControl";
+import responseCachePlugin from "@apollo/server-plugin-response-cache";
+import { KeystoneContext } from "@keystone-6/core/types";
+import { utils } from "@mirrormedia/lilith-core";
+import { createLoginLoggingPlugin } from "./utils/login-logging";
 import {
-  isAccountLocked,
-  shouldResetFailedAttempts,
-  getAccountLockoutData,
-  getLoginFailureMessage,
-} from './utils/account-lockout'
-import { sendPasswordResetEmail } from './utils/password-reset'
+    assertPasswordStrength,
+    isPasswordExpired,
+    passwordPolicy,
+    checkPasswordHistory,
+    addToPasswordHistory,
+} from "./utils/password-policy";
+import {
+    isAccountLocked,
+    shouldResetFailedAttempts,
+    getAccountLockoutData,
+    getLoginFailureMessage,
+} from "./utils/account-lockout";
+import { sendPasswordResetEmail } from "./utils/password-reset";
 
 // 获取 createLoginLoggingPlugin 函数（兼容新旧版本）
 // const createLoginLoggingPlugin =
@@ -31,152 +37,216 @@ import { sendPasswordResetEmail } from './utils/password-reset'
 //   })
 
 const { withAuth } = createAuth({
-  listKey: 'User',
-  identityField: 'email',
-  sessionData: 'id name role passwordUpdatedAt mustChangePassword accountLockedUntil',
-  secretField: 'password',
-  passwordResetLink: {
-    async sendToken({ identity, token }) {
-      if (typeof identity !== 'string' || identity.length === 0) {
-        return
-      }
+    listKey: "User",
+    identityField: "email",
+    sessionData:
+        "id name role passwordUpdatedAt mustChangePassword accountLockedUntil",
+    secretField: "password",
+    passwordResetLink: {
+        async sendToken({ identity, token }) {
+            if (typeof identity !== "string" || identity.length === 0) {
+                return;
+            }
 
-      try {
-        await sendPasswordResetEmail({ email: identity, token })
-      } catch (error) {
-        console.error(
-          JSON.stringify({
-            severity: 'ERROR',
-            message: 'Failed to send password reset email',
-            error: error instanceof Error ? error.message : String(error),
-            timestamp: new Date().toISOString(),
-          })
-        )
-      }
+            try {
+                await sendPasswordResetEmail({ email: identity, token });
+            } catch (error) {
+                console.error(
+                    JSON.stringify({
+                        severity: "ERROR",
+                        message: "Failed to send password reset email",
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        timestamp: new Date().toISOString(),
+                    })
+                );
+            }
+        },
+        tokensValidForMins: envVar.passwordReset.tokensValidForMins,
     },
-    tokensValidForMins: envVar.passwordReset.tokensValidForMins,
-  },
-  initFirstItem: {
-    // If there are no items in the database, keystone will ask you to create
-    // a new user, filling in these fields.
-    fields: ['name', 'email', 'password', 'role'],
-  },
-})
+    initFirstItem: {
+        // If there are no items in the database, keystone will ask you to create
+        // a new user, filling in these fields.
+        fields: ["name", "email", "password", "role"],
+    },
+});
 
-const session = statelessSessions(envVar.session)
+const session = statelessSessions(envVar.session);
 
-const CHANGE_PASSWORD_PATH = '/change-password'
-const ACCOUNT_LOCKED_PATH = '/account-locked'
-const FORGOT_PASSWORD_PATH = '/forgot-password'
-const RESET_PASSWORD_PATH = '/reset-password'
-const MIN_PASSWORD_LENGTH = passwordPolicy.minLength
-const PASSWORD_REQUIREMENT_MESSAGE = passwordPolicy.requirementsMessage
+const CHANGE_PASSWORD_PATH = "/change-password";
+const ACCOUNT_LOCKED_PATH = "/account-locked";
+const FORGOT_PASSWORD_PATH = "/forgot-password";
+const RESET_PASSWORD_PATH = "/reset-password";
+const MIN_PASSWORD_LENGTH = passwordPolicy.minLength;
+const PASSWORD_REQUIREMENT_MESSAGE = passwordPolicy.requirementsMessage;
 
-const JS_BACKTICK = '`'
-const DOLLAR = '$'
+const JS_BACKTICK = "`";
+const DOLLAR = "$";
 
 const ChangePasswordInput = graphql.inputObject({
-  name: 'ChangeMyPasswordInput',
-  fields: {
-    password: graphql.arg({ type: graphql.nonNull(graphql.String) }),
-    confirmPassword: graphql.arg({ type: graphql.nonNull(graphql.String) }),
-  },
-})
+    name: "ChangeMyPasswordInput",
+    fields: {
+        password: graphql.arg({ type: graphql.nonNull(graphql.String) }),
+        confirmPassword: graphql.arg({ type: graphql.nonNull(graphql.String) }),
+    },
+});
 
-const ChangePasswordResult = graphql.object<{ success: boolean; message?: string }>()({
-  name: 'ChangeMyPasswordResult',
-  fields: {
-    success: graphql.field({ type: graphql.nonNull(graphql.Boolean) }),
-    message: graphql.field({ type: graphql.String }),
-  },
-})
+const ChangePasswordResult = graphql.object<{
+    success: boolean;
+    message?: string;
+}>()({
+    name: "ChangeMyPasswordResult",
+    fields: {
+        success: graphql.field({ type: graphql.nonNull(graphql.Boolean) }),
+        message: graphql.field({ type: graphql.String }),
+    },
+});
 
 const passwordSchemaExtension = graphql.extend(() => ({
-  mutation: {
-    changeMyPassword: graphql.field({
-      type: graphql.nonNull(ChangePasswordResult),
-      args: {
-        data: graphql.arg({ type: graphql.nonNull(ChangePasswordInput) }),
-      },
-      async resolve(
-        _root: unknown,
-        { data }: { data: { password: string; confirmPassword: string } },
-        context: KeystoneContext
-      ) {
-        const session = context.session
-
-        if (!session?.itemId) {
-          return {
-            success: false,
-            message: '尚未登入，請重新登入後再試一次。',
-          }
-        }
-
-        const password =
-          typeof data?.password === 'string' ? data.password.trim() : ''
-        const confirmPassword =
-          typeof data?.confirmPassword === 'string'
-            ? data.confirmPassword.trim()
-            : ''
-
-        if (!password) {
-          return {
-            success: false,
-            message: '請輸入新密碼',
-          }
-        }
-
-        if (password !== confirmPassword) {
-          return {
-            success: false,
-            message: '兩次輸入的密碼不一致',
-          }
-        }
-
-        try {
-          assertPasswordStrength(password)
-        } catch (validationError) {
-          return {
-            success: false,
-            message:
-              validationError instanceof Error
-                ? validationError.message
-                : PASSWORD_REQUIREMENT_MESSAGE,
-          }
-        }
-
-        try {
-          const userId = String(session.itemId)
-          const updatedUser = await context.sudo().db.User.updateOne({
-            where: { id: userId },
-            data: {
-              password,
-              passwordUpdatedAt: new Date().toISOString(),
-              mustChangePassword: false,
+    mutation: {
+        changeMyPassword: graphql.field({
+            type: graphql.nonNull(ChangePasswordResult),
+            args: {
+                data: graphql.arg({
+                    type: graphql.nonNull(ChangePasswordInput),
+                }),
             },
-          })
+            async resolve(
+                _root: unknown,
+                {
+                    data,
+                }: { data: { password: string; confirmPassword: string } },
+                context: KeystoneContext
+            ) {
+                const session = context.session;
 
-          if (!updatedUser) {
-            return {
-              success: false,
-              message: '找不到使用者資料',
-            }
-          }
+                if (!session?.itemId) {
+                    return {
+                        success: false,
+                        message: "尚未登入，請重新登入後再試一次。",
+                    };
+                }
 
-          return {
-            success: true,
-            message: '密碼更新成功！',
-          }
-        } catch (error) {
-          return {
-            success: false,
-            message: '更新密碼失敗，請稍後再試。',
-          }
-        }
-      },
-    }),
-  },
-}))
+                const password =
+                    typeof data?.password === "string"
+                        ? data.password.trim()
+                        : "";
+                const confirmPassword =
+                    typeof data?.confirmPassword === "string"
+                        ? data.confirmPassword.trim()
+                        : "";
+
+                if (!password) {
+                    return {
+                        success: false,
+                        message: "請輸入新密碼",
+                    };
+                }
+
+                if (password !== confirmPassword) {
+                    return {
+                        success: false,
+                        message: "兩次輸入的密碼不一致",
+                    };
+                }
+
+                try {
+                    assertPasswordStrength(password);
+                } catch (validationError) {
+                    return {
+                        success: false,
+                        message:
+                            validationError instanceof Error
+                                ? validationError.message
+                                : PASSWORD_REQUIREMENT_MESSAGE,
+                    };
+                }
+
+                try {
+                    const userId = String(session.itemId);
+                    const currentUser = await context.sudo().db.User.findOne({
+                        where: { id: parseInt(userId, 10) },
+                    });
+
+                    if (!currentUser) {
+                        return {
+                            success: false,
+                            message: "找不到使用者資料",
+                        };
+                    }
+
+                    // First, check if new password matches current password
+                    const bcrypt = await import("bcryptjs");
+                    const currentPasswordHash = String(currentUser.password);
+                    const matchesCurrentPassword = await bcrypt.compare(
+                        password,
+                        currentPasswordHash
+                    );
+
+                    if (matchesCurrentPassword) {
+                        return {
+                            success: false,
+                            message: "密碼不可與前3次使用過的密碼相同",
+                        };
+                    }
+
+                    // Then check password history
+                    const passwordHistory = currentUser.passwordHistory as
+                        | string[]
+                        | null
+                        | undefined;
+                    const isDuplicate = await checkPasswordHistory(
+                        password,
+                        passwordHistory
+                    );
+
+                    if (isDuplicate) {
+                        return {
+                            success: false,
+                            message: "密碼不可與前3次使用過的密碼相同",
+                        };
+                    }
+                    // Update password (KeystoneJS will automatically hash it)
+                    // Also update passwordHistory with the current password hash
+                    const updatedPasswordHistory = addToPasswordHistory(
+                        currentPasswordHash,
+                        passwordHistory
+                    );
+
+                    const updatedUser = await context.sudo().db.User.updateOne({
+                        where: { id: parseInt(userId, 10) },
+                        data: {
+                            password,
+                            passwordUpdatedAt: new Date().toISOString(),
+                            mustChangePassword: false,
+                            passwordHistory: updatedPasswordHistory,
+                        },
+                    });
+
+                    if (!updatedUser) {
+                        return {
+                            success: false,
+                            message: "找不到使用者資料",
+                        };
+                    }
+
+                    return {
+                        success: true,
+                        message: "密碼更新成功！",
+                    };
+                } catch (error) {
+                    console.error("Password update error:", error);
+                    return {
+                        success: false,
+                        message: "更新密碼失敗，請稍後再試。",
+                    };
+                }
+            },
+        }),
+    },
+}));
 
 const accountLockedPageTemplate = String.raw`
 import { useEffect, useState } from 'react';
@@ -223,7 +293,7 @@ export default function AccountLockedPage() {
           const remaining = Math.max(0, Math.ceil((lockUntil - now) / 1000));
           setRemainingSeconds(remaining);
           setIsChecking(false);
-          
+
           if (remaining === 0) {
             window.location.replace('/signin');
           }
@@ -237,7 +307,7 @@ export default function AccountLockedPage() {
           const lockUntil = parseInt(localLockout, 10);
           const now = Date.now();
           const remaining = Math.max(0, Math.ceil((lockUntil - now) / 1000));
-          
+
           if (remaining > 0) {
             setRemainingSeconds(remaining);
             setIsChecking(false);
@@ -348,7 +418,7 @@ export default function AccountLockedPage() {
           <h1 style={{ margin: '0 0 12px', fontSize: '28px', color: '#0f172a', fontWeight: 700 }}>
             帳號已被鎖定
           </h1>
-          
+
           <p style={{ margin: '0 0 32px', color: '#64748b', fontSize: '16px', lineHeight: 1.6 }}>
             由於多次登入失敗，您的帳號已被暫時鎖定以保護安全。
           </p>
@@ -411,7 +481,7 @@ export default function AccountLockedPage() {
     </>
   );
 }
-`
+`;
 
 const changePasswordPageTemplate = String.raw`
 import { FormEvent, useState } from 'react';
@@ -486,7 +556,7 @@ export default function ChangePasswordPage() {
           },
         }),
                                   });
-                                  
+
                                   const result = await response.json();
 
       if (!response.ok || result.errors?.length) {
@@ -642,7 +712,7 @@ export default function ChangePasswordPage() {
     </>
   );
 }
-`
+`;
 
 const forgotPasswordPageTemplate = String.raw`
 import { FormEvent, useState } from 'react';
@@ -816,7 +886,7 @@ export default function ForgotPasswordPage() {
     </>
   );
 }
-`
+`;
 
 const resetPasswordPageTemplate = String.raw`
 import { FormEvent, useEffect, useState } from 'react';
@@ -1103,7 +1173,7 @@ export default function ResetPasswordPage() {
     </>
   );
 }
-`
+`;
 
 const signinPageTemplate = String.raw`
 import { FormEvent, useState } from 'react';
@@ -1404,7 +1474,7 @@ export default function SigninPage() {
     </>
   );
 }
-`
+`;
 
 const passwordEnforcerClientScript = `
 (function () {
@@ -1691,246 +1761,269 @@ export default class CustomDocument extends Document {
     );
   }
 }
-`
+`;
 
 const graphqlConfig = {
-  apolloConfig: {
-    plugins: [
-      createLoginLoggingPlugin(),
-      ...(envVar.accessControlStrategy === 'gql' && envVar.cache.isEnabled
-        ? [
-          responseCachePlugin(),
-          ApolloServerPluginCacheControl({
-            defaultMaxAge: envVar.cache.maxAge,
-          }),
-        ]
-        : []),
-    ],
-    ...(envVar.accessControlStrategy === 'gql' && envVar.cache.isEnabled
-      ? {
-        cache: new KeyvAdapter(
-          new Keyv(envVar.cache.url, {
-            lazyConnect: true,
-            namespace: envVar.cache.identifier,
-            connectionName: envVar.cache.identifier,
-            connectTimeout: envVar.cache.connectTimeOut,
-          })
-        ),
-      }
-      : {}),
-  } as any,
-  extendGraphqlSchema: passwordSchemaExtension,
-}
+    apolloConfig: {
+        plugins: [
+            createLoginLoggingPlugin(),
+            ...(envVar.accessControlStrategy === "gql" && envVar.cache.isEnabled
+                ? [
+                      responseCachePlugin(),
+                      ApolloServerPluginCacheControl({
+                          defaultMaxAge: envVar.cache.maxAge,
+                      }),
+                  ]
+                : []),
+        ],
+        ...(envVar.accessControlStrategy === "gql" && envVar.cache.isEnabled
+            ? {
+                  cache: new KeyvAdapter(
+                      new Keyv(envVar.cache.url, {
+                          lazyConnect: true,
+                          namespace: envVar.cache.identifier,
+                          connectionName: envVar.cache.identifier,
+                          connectTimeout: envVar.cache.connectTimeOut,
+                      })
+                  ),
+              }
+            : {}),
+    } as any,
+    extendGraphqlSchema: passwordSchemaExtension,
+};
 
 const baseKeystoneConfig = config({
     db: {
-      provider: envVar.database.provider,
-      url: envVar.database.url,
-      idField: {
-        kind: 'autoincrement',
-      },
+        provider: envVar.database.provider,
+        url: envVar.database.url,
+        idField: {
+            kind: "autoincrement",
+        },
     },
     ui: {
-      // If `isDisabled` is set to `true` then the Admin UI will be completely disabled.
-      isDisabled: envVar.isUIDisabled,
-      // For our starter, we check that someone has session data before letting them see the Admin UI.
-      isAccessAllowed: (context) => {
-        const { session, req } = context;
-        const path = req?.url || '';
+        // If `isDisabled` is set to `true` then the Admin UI will be completely disabled.
+        isDisabled: envVar.isUIDisabled,
+        // For our starter, we check that someone has session data before letting them see the Admin UI.
+        isAccessAllowed: (context) => {
+            const { session, req } = context;
+            const path = req?.url || "";
 
-        // Allow access to change password page if user needs to change password
-        if (path === CHANGE_PASSWORD_PATH || path.indexOf(CHANGE_PASSWORD_PATH) === 0) {
-          return !!session;
-        }
+            // Allow access to change password page if user needs to change password
+            if (
+                path === CHANGE_PASSWORD_PATH ||
+                path.indexOf(CHANGE_PASSWORD_PATH) === 0
+            ) {
+                return !!session;
+            }
 
-        // Allow access to account locked page without session
-        if (path === ACCOUNT_LOCKED_PATH || path.indexOf(ACCOUNT_LOCKED_PATH) === 0) {
-          return true;
-        }
+            // Allow access to account locked page without session
+            if (
+                path === ACCOUNT_LOCKED_PATH ||
+                path.indexOf(ACCOUNT_LOCKED_PATH) === 0
+            ) {
+                return true;
+            }
 
-        if (path === FORGOT_PASSWORD_PATH || path.indexOf(FORGOT_PASSWORD_PATH) === 0) {
-          return true;
-        }
+            if (
+                path === FORGOT_PASSWORD_PATH ||
+                path.indexOf(FORGOT_PASSWORD_PATH) === 0
+            ) {
+                return true;
+            }
 
-        if (path === RESET_PASSWORD_PATH || path.indexOf(RESET_PASSWORD_PATH) === 0) {
-          return true;
-        }
+            if (
+                path === RESET_PASSWORD_PATH ||
+                path.indexOf(RESET_PASSWORD_PATH) === 0
+            ) {
+                return true;
+            }
 
-        // Check if user needs to change password
-        if (session?.data) {
-          if (
-            session.data.mustChangePassword ||
-            (session.data.passwordUpdatedAt &&
-              isPasswordExpired({ passwordUpdatedAt: session.data.passwordUpdatedAt }))
-          ) {
-            // If accessing API or other pages, might want to block or allow
-            // For now, we rely on the client-side script to redirect
-            // But for the Admin UI, we might want to restrict access
-          }
-        }
+            // Check if user needs to change password
+            if (session?.data) {
+                if (
+                    session.data.mustChangePassword ||
+                    (session.data.passwordUpdatedAt &&
+                        isPasswordExpired({
+                            passwordUpdatedAt: session.data.passwordUpdatedAt,
+                        }))
+                ) {
+                    // If accessing API or other pages, might want to block or allow
+                    // For now, we rely on the client-side script to redirect
+                    // But for the Admin UI, we might want to restrict access
+                }
+            }
 
-        return !!session;
-      },
-      getAdditionalFiles: [
-        async () => [
-          {
-            mode: 'write' as const,
-            outputPath: 'pages/change-password.tsx',
-            src: changePasswordPageTemplate,
-          },
-          {
-            mode: 'write' as const,
-            outputPath: 'pages/signin.tsx',
-            src: signinPageTemplate,
-          },
-          {
-            mode: 'write' as const,
-            outputPath: 'pages/forgot-password.tsx',
-            src: forgotPasswordPageTemplate,
-          },
-          {
-            mode: 'write' as const,
-            outputPath: 'pages/reset-password.tsx',
-            src: resetPasswordPageTemplate,
-          },
-          {
-            mode: 'write' as const,
-            outputPath: 'pages/account-locked.tsx',
-            src: accountLockedPageTemplate,
-          },
-          {
-            mode: 'write' as const,
-            outputPath: 'pages/_document.tsx',
-            src: adminDocumentTemplate,
-          },
+            return !!session;
+        },
+        getAdditionalFiles: [
+            async () => [
+                {
+                    mode: "write" as const,
+                    outputPath: "pages/change-password.tsx",
+                    src: changePasswordPageTemplate,
+                },
+                {
+                    mode: "write" as const,
+                    outputPath: "pages/signin.tsx",
+                    src: signinPageTemplate,
+                },
+                {
+                    mode: "write" as const,
+                    outputPath: "pages/forgot-password.tsx",
+                    src: forgotPasswordPageTemplate,
+                },
+                {
+                    mode: "write" as const,
+                    outputPath: "pages/reset-password.tsx",
+                    src: resetPasswordPageTemplate,
+                },
+                {
+                    mode: "write" as const,
+                    outputPath: "pages/account-locked.tsx",
+                    src: accountLockedPageTemplate,
+                },
+                {
+                    mode: "write" as const,
+                    outputPath: "pages/_document.tsx",
+                    src: adminDocumentTemplate,
+                },
+            ],
         ],
-      ],
     },
     graphql: graphqlConfig as any,
     lists,
     session,
     storage: {
-      files: {
-        kind: 'local',
-        type: 'file',
-        storagePath: envVar.files.storagePath,
-        serverRoute: {
-          path: '/files',
+        files: {
+            kind: "local",
+            type: "file",
+            storagePath: envVar.files.storagePath,
+            serverRoute: {
+                path: "/files",
+            },
+            generateUrl: (path) => `${envVar.files.baseUrl}${path}`,
         },
-        generateUrl: (path) => `${envVar.files.baseUrl}${path}`,
-      },
-      images: {
-        kind: 'local',
-        type: 'image',
-        storagePath: envVar.images.storagePath,
-        serverRoute: {
-          path: '/images',
+        images: {
+            kind: "local",
+            type: "image",
+            storagePath: envVar.images.storagePath,
+            serverRoute: {
+                path: "/images",
+            },
+            generateUrl: (path) => `${envVar.images.baseUrl}${path}`,
         },
-        generateUrl: (path) => `${envVar.images.baseUrl}${path}`,
-      },
     },
     server: {
-      maxFileSize: 2000 * 1024 * 1024,
-      extendExpressApp: (app, context) => {
-        app.use(express.json({ limit: '500mb' }))
+        maxFileSize: 2000 * 1024 * 1024,
+        extendExpressApp: (app, context) => {
+            app.use(express.json({ limit: "500mb" }));
 
-        app.get('/health_check', (_req, res) => {
-          res.status(200).json({ status: 'healthy' })
-        })
+            app.get("/health_check", (_req, res) => {
+                res.status(200).json({ status: "healthy" });
+            });
 
-        app.use(async (req, res, next) => {
-          try {
-            const path = req.path || ''
+            app.use(async (req, res, next) => {
+                try {
+                    const path = req.path || "";
 
-            const shouldSkip =
-              req.method !== 'GET' ||
-              path === CHANGE_PASSWORD_PATH ||
-              path === ACCOUNT_LOCKED_PATH ||
-              path === FORGOT_PASSWORD_PATH ||
-              path === RESET_PASSWORD_PATH ||
-              path === '/signin' ||
-              path === '/init' ||
-              path === '/health_check' ||
-              path.startsWith('/api') ||
-              path.startsWith('/_next') ||
-              path.startsWith('/static') ||
-              path.startsWith('/files') ||
-              path.startsWith('/images') ||
-              /\.[a-zA-Z0-9]+$/.test(path)
+                    const shouldSkip =
+                        req.method !== "GET" ||
+                        path === CHANGE_PASSWORD_PATH ||
+                        path === ACCOUNT_LOCKED_PATH ||
+                        path === FORGOT_PASSWORD_PATH ||
+                        path === RESET_PASSWORD_PATH ||
+                        path === "/signin" ||
+                        path === "/init" ||
+                        path === "/health_check" ||
+                        path.startsWith("/api") ||
+                        path.startsWith("/_next") ||
+                        path.startsWith("/static") ||
+                        path.startsWith("/files") ||
+                        path.startsWith("/images") ||
+                        /\.[a-zA-Z0-9]+$/.test(path);
 
-            if (shouldSkip) {
-              return next()
-            }
+                    if (shouldSkip) {
+                        return next();
+                    }
 
-            const keystoneContext = await context.withRequest(req, res)
-            const sessionData = keystoneContext.session?.data
+                    const keystoneContext = await context.withRequest(req, res);
+                    const sessionData = keystoneContext.session?.data;
 
-            if (!sessionData?.id) {
-              if (path === CHANGE_PASSWORD_PATH) {
-                return res.redirect('/signin')
-              }
-              return next()
-            }
+                    if (!sessionData?.id) {
+                        if (path === CHANGE_PASSWORD_PATH) {
+                            return res.redirect("/signin");
+                        }
+                        return next();
+                    }
 
-            let requiresChange = isPasswordExpired({
-              passwordUpdatedAt: sessionData.passwordUpdatedAt,
-              mustChangePassword: sessionData.mustChangePassword,
-            })
+                    let requiresChange = isPasswordExpired({
+                        passwordUpdatedAt: sessionData.passwordUpdatedAt,
+                        mustChangePassword: sessionData.mustChangePassword,
+                    });
 
-            if (!requiresChange) {
-              const fresh = await keystoneContext.sudo().query.User.findOne({
-                where: { id: sessionData.id },
-                query: 'passwordUpdatedAt mustChangePassword',
-              })
-              requiresChange = isPasswordExpired(fresh)
-            }
+                    if (!requiresChange) {
+                        const fresh = await keystoneContext
+                            .sudo()
+                            .query.User.findOne({
+                                where: { id: sessionData.id },
+                                query: "passwordUpdatedAt mustChangePassword",
+                            });
+                        requiresChange = isPasswordExpired(fresh);
+                    }
 
-            if (requiresChange && path !== CHANGE_PASSWORD_PATH) {
-              return res.redirect(CHANGE_PASSWORD_PATH)
-            }
+                    if (requiresChange && path !== CHANGE_PASSWORD_PATH) {
+                        return res.redirect(CHANGE_PASSWORD_PATH);
+                    }
 
-            if (!requiresChange && path === CHANGE_PASSWORD_PATH) {
-              return res.redirect('/')
-            }
-          } catch (error) {
-            console.error(
-              JSON.stringify({
-                severity: 'ERROR',
-                message: 'Password enforcement middleware error',
-                type: 'EXPRESS_PASSWORD_POLICY',
-                error: error instanceof Error ? error.message : String(error),
-                timestamp: new Date().toISOString(),
-              })
-            )
-          }
+                    if (!requiresChange && path === CHANGE_PASSWORD_PATH) {
+                        return res.redirect("/");
+                    }
+                } catch (error) {
+                    console.error(
+                        JSON.stringify({
+                            severity: "ERROR",
+                            message: "Password enforcement middleware error",
+                            type: "EXPRESS_PASSWORD_POLICY",
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                            timestamp: new Date().toISOString(),
+                        })
+                    );
+                }
 
-          next()
-        })
+                next();
+            });
 
-        //if (envVar.accessControlStrategy === 'cms') {
-        //  app.use(
-        //    createPreviewMiniApp({
-        //      previewServer: envVar.previewServer,
-        //      keystoneContext: context,
-        //    })
-        //  )
-        //}
-      },
+            //if (envVar.accessControlStrategy === 'cms') {
+            //  app.use(
+            //    createPreviewMiniApp({
+            //      previewServer: envVar.previewServer,
+            //      keystoneContext: context,
+            //    })
+            //  )
+            //}
+        },
     },
-  })
+});
 
-const keystone = withAuth(baseKeystoneConfig)
+const keystone = withAuth(baseKeystoneConfig);
 
 if (keystone.ui?.getAdditionalFiles?.length) {
-  keystone.ui.getAdditionalFiles = keystone.ui.getAdditionalFiles.map((getFiles) => {
-    return async () => {
-      const files = await getFiles()
-      if (!Array.isArray(files)) {
-        return files
-      }
-      return files.filter((file) => file.outputPath !== 'pages/signin.js')
-    }
-  })
+    keystone.ui.getAdditionalFiles = keystone.ui.getAdditionalFiles.map(
+        (getFiles) => {
+            return async () => {
+                const files = await getFiles();
+                if (!Array.isArray(files)) {
+                    return files;
+                }
+                return files.filter(
+                    (file) => file.outputPath !== "pages/signin.js"
+                );
+            };
+        }
+    );
 }
 
-export default keystone
+export default keystone;
