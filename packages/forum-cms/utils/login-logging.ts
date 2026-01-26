@@ -5,6 +5,7 @@ import {
   getAccountLockoutData,
   getLoginFailureMessage,
 } from './account-lockout'
+import { verifyRecaptchaToken } from './recaptcha'
 import { GraphQLError } from 'graphql'
 
 const LOGIN_IDENTITY_KEYS = ['identity', 'email', 'username']
@@ -36,6 +37,34 @@ function extractIdentity(requestContext: any): string | undefined {
     const identity = readIdentityFromSource(candidate)
     if (identity) {
       return identity
+    }
+  }
+
+  return undefined
+}
+
+function extractRecaptchaToken(requestContext: any): string | undefined {
+  // First try to get from HTTP header (preferred method)
+  const headerToken =
+    requestContext.contextValue?.req?.headers?.['x-recaptcha-token'] ||
+    requestContext.request?.http?.headers?.get('x-recaptcha-token')
+
+  if (typeof headerToken === 'string' && headerToken.length > 0) {
+    return headerToken
+  }
+
+  // Fallback: try to get from GraphQL variables (for backwards compatibility)
+  const candidates = [
+    requestContext.request?.variables,
+    requestContext.contextValue?.req?.body?.variables,
+  ]
+
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object') {
+      const token = candidate.recaptchaToken
+      if (typeof token === 'string' && token.length > 0) {
+        return token
+      }
     }
   }
 
@@ -107,57 +136,136 @@ export const createLoginLoggingPlugin = () => {
         requestContext.request?.http?.headers?.get('x-forwarded-for') ||
         ''
 
-      // Check if this is an authentication request
+      // Check if this is an authentication request or password reset request
       const operationName = requestContext.request?.operationName
       const query = requestContext.request?.query || ''
       const isAuthRequest =
         query.includes('authenticateUserWithPassword') ||
         operationName === 'AuthenticateUserWithPassword'
+      const isPasswordResetRequest =
+        query.includes('sendUserPasswordResetLink') ||
+        operationName === 'SendUserPasswordResetLink'
 
-      // Pre-authentication: Check account lockout status
+      // Pre-authentication: Check reCAPTCHA and account lockout status
       // We'll do the check here but store the result to be used in responseForOperation
       // This avoids throwing in requestDidStart which causes a 500 error
-      let lockoutError: GraphQLError | null = null;
+      let lockoutError: GraphQLError | null = null
+      let recaptchaError: GraphQLError | null = null
+
+      // Verify reCAPTCHA for password reset requests
+      if (isPasswordResetRequest) {
+        const recaptchaToken = extractRecaptchaToken(requestContext)
+        const recaptchaResult = await verifyRecaptchaToken(recaptchaToken, 'forgot_password')
+
+        if (!recaptchaResult.success) {
+          recaptchaError = new GraphQLError(recaptchaResult.message || '人機驗證失敗', {
+            extensions: {
+              code: 'RECAPTCHA_FAILED',
+              score: recaptchaResult.score,
+            },
+          })
+
+          // Log reCAPTCHA failure
+          console.log(
+            JSON.stringify({
+              severity: 'WARNING',
+              message: 'reCAPTCHA verification failed for password reset',
+              type: 'RECAPTCHA_PASSWORD_RESET_FAILED',
+              email: requestContext.request?.variables?.email,
+              score: recaptchaResult.score,
+              errorCodes: recaptchaResult.errorCodes,
+              remoteIp: clientIp,
+              timestamp: new Date().toISOString(),
+            })
+          )
+        }
+      }
 
       if (isAuthRequest) {
-        const identity = extractIdentity(requestContext)
+        // Verify reCAPTCHA token first
+        const recaptchaToken = extractRecaptchaToken(requestContext)
+        const recaptchaResult = await verifyRecaptchaToken(recaptchaToken, 'login')
 
-        if (identity && requestContext.contextValue) {
-          try {
-            const user = await findUserByIdentity(requestContext.contextValue, identity)
+        if (!recaptchaResult.success) {
+          recaptchaError = new GraphQLError(recaptchaResult.message || '人機驗證失敗', {
+            extensions: {
+              code: 'RECAPTCHA_FAILED',
+              score: recaptchaResult.score,
+            },
+          })
 
-            if (user) {
-              // Check if account is locked
-              if (isAccountLocked(user)) {
-                const errorMessage = getLoginFailureMessage(user, true)
+          // Log reCAPTCHA failure
+          console.log(
+            JSON.stringify({
+              severity: 'WARNING',
+              message: 'reCAPTCHA verification failed for login',
+              type: 'RECAPTCHA_LOGIN_FAILED',
+              identity: extractIdentity(requestContext),
+              score: recaptchaResult.score,
+              errorCodes: recaptchaResult.errorCodes,
+              remoteIp: clientIp,
+              timestamp: new Date().toISOString(),
+            })
+          )
+        }
 
-                lockoutError = new GraphQLError(errorMessage, {
-                  extensions: {
-                    code: 'ACCOUNT_LOCKED',
-                  },
-                })
+        // Only check account lockout if reCAPTCHA passed
+        if (!recaptchaError) {
+          const identity = extractIdentity(requestContext)
+
+          if (identity && requestContext.contextValue) {
+            try {
+              const user = await findUserByIdentity(requestContext.contextValue, identity)
+
+              if (user) {
+                // Check if account is locked
+                if (isAccountLocked(user)) {
+                  const errorMessage = getLoginFailureMessage(user, true)
+
+                  lockoutError = new GraphQLError(errorMessage, {
+                    extensions: {
+                      code: 'ACCOUNT_LOCKED',
+                    },
+                  })
+                }
+
+                // If lockout period has expired, reset failed attempts
+                if (shouldResetFailedAttempts(user)) {
+                  await requestContext.contextValue.sudo().db.User.updateOne({
+                    where: { id: user.id },
+                    data: {
+                      loginFailedAttempts: 0,
+                      accountLockedUntil: null,
+                      lastFailedLoginAt: null,
+                    },
+                  })
+                }
               }
-
-              // If lockout period has expired, reset failed attempts
-              if (shouldResetFailedAttempts(user)) {
-                await requestContext.contextValue.sudo().db.User.updateOne({
-                  where: { id: user.id },
-                  data: {
-                    loginFailedAttempts: 0,
-                    accountLockedUntil: null,
-                    lastFailedLoginAt: null,
-                  },
-                })
-              }
+            } catch (error) {
+              console.error('Error checking account lockout:', error)
             }
-          } catch (error) {
-            console.error('Error checking account lockout:', error)
           }
         }
       }
 
       return {
         async responseForOperation() {
+          // Check reCAPTCHA error first
+          if (recaptchaError) {
+            return {
+              http: {
+                status: 200,
+                headers: new Map([['X-Recaptcha-Failed', 'true']]),
+              },
+              body: {
+                kind: 'single',
+                singleResult: {
+                  errors: [recaptchaError],
+                },
+              },
+            }
+          }
+
           if (lockoutError) {
             return {
               http: {
@@ -172,7 +280,7 @@ export const createLoginLoggingPlugin = () => {
               },
             }
           }
-          return null;
+          return null
         },
 
         async willSendResponse(requestContext: any) {
@@ -190,7 +298,7 @@ export const createLoginLoggingPlugin = () => {
                 const result = data[key]
 
                 // Check if the result looks like an authentication response
-                // It should have either a sessionToken (success) 
+                // It should have either a sessionToken (success)
                 // or be of type UserAuthenticationWithPasswordFailure
                 if (
                   result &&
