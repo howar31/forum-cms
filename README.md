@@ -1,47 +1,30 @@
-# Lilith
+# Forum CMS
 
-## Monorepo setup
-This is a monorepo containing sub-packages:
-- [@mirrormedia/lilith-draft-renderer](./packages/draft-renderer): see `packages/draft-renderer`
-- [@mirrormedia/lilith-draft-editor](./packages/draft-editor): see `packages/draft-editor`
-- [@mirrormedia/lilith-core](./packages/core): see `packages/core`
-- [@mirrormedia/lilith-editools](./packages/editools): see `packages/editools`
-- [@mirrormedia/lilith-mesh](./packages/mesh): see `packages/mesh`
-- [@mirrormedia/lilith-mirrormedia](./packages/mirrormedia): see `packages/mirrormedia`
-- [@mirrormedia/lilith-readr](./packages/readr): see `packages/readr`
-- [@mirrormedia/lilith-openrelationship](./packages/openrelationship): see `packages/openrelationship`
-- [@mirrormedia/lilith-mirrordaily](./packages/mirrordaily): see `packages/mirrordaily`
+Forum 後台內容管理系統，基於 [Keystone 6](https://keystonejs.com/) 的 monorepo。
 
-This monorepo adopts `husky`, `lint-staged` and `yarn workspaces`. 
-`husky` and `lint-staged` will 
-1. run eslint for needed sub-packages before `git commit`
+## Monorepo 結構
 
-`yarn workspaces` will install dependencies of all the sub-packages wisely and effienciently.
+本 repo 使用 Yarn workspaces，包含以下套件：
 
-## Development
-Before modifying sub-packages' source codes, make sure you install dependencies on root. 
-We need `husky` and `lint-staged` installed first.
+- **[packages/core](./packages/core)**（`@mirrormedia/lilith-core`）：共用 Keystone 自訂欄位與工具（如 rich-text-editor、filters、access control 等），供 CMS 使用。
+- **[packages/forum-cms](./packages/forum-cms)**：Forum CMS 主應用，提供文章、留言、會員、分類、標籤、反應等內容管理與 GraphQL API。
 
-## Installation
-`yarn install`
+開發流程使用 **husky**、**lint-staged**，在 `git commit` 前會對變更檔案執行 eslint。
 
-## Troubleshootings
-### Q1: 我在 root 資料夾底下跑 `yarn install` 時，在 `yarn postinstall` 階段發生錯誤。
+## 環境需求
 
-A1: 如果錯誤訊息與 `@mirrormedia/lilith-core` 有關，可嘗試以下步驟來解決
+- Node.js >= 22.0.0
+- Yarn >= 1.22.0
 
-1. 在 `packages/draft-renderer` 底下執行 `yarn build`
-2. 在 `packages/draft-editor` 底下執行 `yarn build`
-3. 在 `packages/core` 底下執行 `yarn build`
-4. 在 root 底下執行 `yarn install`
+## 安裝與開發
 
-確保 local 端有 `@mirrormedia-/lilith-core` 相關的檔案可以讓其他 package 載入。
+在專案根目錄安裝依賴（會一併處理各 workspace 的依賴）：
 
-### Q2: 針對在 Windows 環境開發，安裝階段時，發生與 `posinstall` script 有關錯誤的處理。
+```bash
+yarn install
+```
 
-A2: 因為 `yarn workspace` 與個別 package 的 `postinstall` script 在 Windows 環境上是有問題的 [1](https://github.com/yarnpkg/yarn/issues/7694)，解法方式是安裝階段時不執行 `postinstall` script，等安裝完畢時，再到個別 package 底下去執行 `postinstall` script，步驟如下：
-1. 在 root 底下執行 `set WINDOWS_ONLY=true && yarn install`
-2. 到目標 package 底下執行 `set WINDOWS_ONLY=false && yarn postinstall`
+修改或開發各套件前，請先在根目錄執行過 `yarn install`，以確保 husky、lint-staged 與 workspace 依賴正確。
 
 ## 前端會員登入 API（Firebase）
 
@@ -116,3 +99,21 @@ query AuthenticatedMember {
 - `FIREBASE_SERVICE_ACCOUNT_JSON` 或 `FIREBASE_SERVICE_ACCOUNT_BASE64`
 - `MEMBER_SESSION_SECRET`
 - `MEMBER_SESSION_MAX_AGE`（秒）
+
+## 常見問題
+
+### 在根目錄執行 `yarn install` 時，於 `yarn postinstall` 階段報錯
+
+若錯誤與 `@mirrormedia/lilith-core` 有關，可依序執行：
+
+1. 在 `packages/core` 執行 `yarn build`
+2. 回到專案根目錄執行 `yarn install`
+
+以確保本機有建好的 `@mirrormedia/lilith-core` 供其他 package 使用。
+
+### Windows 下安裝時出現與 `postinstall` 相關錯誤
+
+Yarn workspace 與個別 package 的 `postinstall` 在 Windows 上曾有相容性問題，可改為先略過 postinstall 完成安裝，再到需要的 package 手動執行：
+
+1. 在根目錄執行：`set WINDOWS_ONLY=true && yarn install`
+2. 進入目標 package 目錄後執行：`set WINDOWS_ONLY=false && yarn postinstall`
