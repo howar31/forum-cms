@@ -19,6 +19,10 @@ steps:
 
         -t gcr.io/$PROJECT_ID/$_IMAGE_NAME:latest \
 
+        --build-arg RECAPTCHA_ENABLED=$_RECAPTCHA_ENABLED \
+
+        --build-arg RECAPTCHA_SITE_KEY=$_RECAPTCHA_SITE_KEY \
+
         --cache-from gcr.io/$PROJECT_ID/$_IMAGE_NAME:latest .
 
     entrypoint: bash
@@ -60,3 +64,5 @@ substitutions:
   _TARGET_PACKAGE: '' # default value
   _IMAGE_NAME: '' # default value
   _CLOUD_RUN_SERVICE_NAMES: '' # default value
+  _RECAPTCHA_ENABLED: 'false' # default value
+  _RECAPTCHA_SITE_KEY: '' # default value

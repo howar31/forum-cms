@@ -34,6 +34,12 @@ COPY . $APP_DIR
 RUN yarn install
 RUN yarn postinstall
 
+## Build arguments for frontend-embedded config (public keys only)
+ARG RECAPTCHA_ENABLED=false
+ARG RECAPTCHA_SITE_KEY=
+ENV RECAPTCHA_ENABLED=$RECAPTCHA_ENABLED
+ENV RECAPTCHA_SITE_KEY=$RECAPTCHA_SITE_KEY
+
 ## Build application bundles
 RUN yarn build
 
