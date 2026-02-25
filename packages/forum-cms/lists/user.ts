@@ -46,20 +46,12 @@ const listConfigurations = list({
             type: "string",
             options: [
                 {
-                    label: "admin",
+                    label: "Admin",
                     value: "admin",
                 },
                 {
-                    label: "moderator",
-                    value: "moderator",
-                },
-                {
-                    label: "editor",
+                    label: "Editor",
                     value: "editor",
-                },
-                {
-                    label: "contributor",
-                    value: "contributor",
                 },
             ],
             validation: { isRequired: true },
@@ -69,6 +61,11 @@ const listConfigurations = list({
         //   ref: 'Publisher.user',
         //   many: false,
         // }),
+        officialAccounts: relationship({
+            label: "官方帳號授權",
+            ref: "OfficialMapping.cmsUser",
+            many: true,
+        }),
         isProtected: checkbox({
             label: "受保護",
             defaultValue: false,

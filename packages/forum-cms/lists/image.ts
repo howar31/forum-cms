@@ -1,6 +1,6 @@
 import envVar from '../environment-variables'
 import { list, graphql } from '@keystone-6/core'
-import { image, text, virtual } from '@keystone-6/core/fields'
+import { image, text, virtual, integer, relationship } from '@keystone-6/core/fields'
 import { utils } from '@mirrormedia/lilith-core'
 import { getFileURL } from '../utils/common'
 const { allowRoles, admin, moderator, editor } = utils.accessControl
@@ -181,6 +181,11 @@ const listConfigurations = list({
         // itemView: { fieldMode: 'read' },
       },
     }),
+    altText: text({ label: '替代文字' }),
+    caption: text({ label: '圖片說明' }),
+    width: integer({ label: '原始寬度' }),
+    height: integer({ label: '原始高度' }),
+    uploadedBy: relationship({ ref: 'Member', many: false, label: '上傳者' }),
   },
   ui: {
     label: '圖片',

@@ -68,6 +68,22 @@ export function addTrackingFields(
       itemView: { fieldMode: 'read' },
     },
   })
+  list.fields.deletedAt = timestamp({
+    label: '刪除時間',
+    db: { isNullable: true },
+    ui: {
+      createView: { fieldMode: 'hidden' },
+      itemView: { fieldMode: 'read' },
+    },
+  })
+  list.fields.deletedBy = relationship({
+    label: '刪除者',
+    ref: 'User',
+    ui: {
+      createView: { fieldMode: 'hidden' },
+      itemView: { fieldMode: 'read' },
+    },
+  })
 
   // add custom hooks
   // combine the original hook and the custom one

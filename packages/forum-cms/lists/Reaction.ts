@@ -13,14 +13,17 @@ const listConfigurations = list({
         member: relationship({ ref: 'Member.reactions', many: false, label: '會員' }),
         post: relationship({ ref: 'Post.reactions', many: false, label: '文章' }),
         comment: relationship({ ref: 'Comment.reactions', many: false, label: '留言' }),
-        emotion: select({
-            label: '情緒',
+        type: select({
+            label: '心情類型',
             type: 'enum',
             options: [
-                { label: '開心', value: 'happy' },
-                { label: '生氣', value: 'angry' },
-                { label: '驚訝', value: 'surprise' },
-                { label: '傷心', value: 'sad' },
+                { label: 'Love', value: 'love' },
+                { label: 'Like', value: 'like' },
+                { label: 'Haha', value: 'haha' },
+                { label: 'Sad', value: 'sad' },
+                { label: 'Angry', value: 'angry' },
+                { label: 'Scared', value: 'scared' },
+                { label: 'Wow', value: 'wow' },
             ],
             validation: { isRequired: true },
         }),
@@ -32,7 +35,7 @@ const listConfigurations = list({
     ui: {
         label: '反應',
         listView: {
-            initialColumns: ['member', 'emotion', 'post', 'comment'],
+            initialColumns: ['member', 'type', 'post', 'comment'],
         },
     },
     access: {

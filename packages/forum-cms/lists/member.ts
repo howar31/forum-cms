@@ -1,6 +1,6 @@
 import { utils } from '@mirrormedia/lilith-core'
 import { list } from '@keystone-6/core'
-import { text, relationship, checkbox, integer, select } from '@keystone-6/core/fields'
+import { text, relationship, checkbox, integer, select, timestamp } from '@keystone-6/core/fields'
 
 const { allowRoles, admin, moderator, editor } = utils.accessControl
 
@@ -89,6 +89,23 @@ const listConfigurations = list({
       label: '追蹤分類',
       ref: 'Category',
       many: true,
+    }),
+    isOfficial: checkbox({
+      label: '官方帳號',
+      defaultValue: false,
+    }),
+    status: select({
+      label: '帳號狀態',
+      type: 'enum',
+      options: [
+        { label: 'Active', value: 'active' },
+        { label: 'Banned', value: 'banned' },
+      ],
+      defaultValue: 'active',
+    }),
+    joinDate: timestamp({
+      label: '加入日期',
+      defaultValue: { kind: 'now' },
     }),
     language: select({
       label: '語系',

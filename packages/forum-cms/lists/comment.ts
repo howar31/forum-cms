@@ -3,7 +3,6 @@ import { list } from '@keystone-6/core';
 import {
   text,
   relationship,
-  password,
   timestamp,
   checkbox,
   select,
@@ -14,16 +13,23 @@ const {
   admin,
   moderator,
   editor,
-  owner,
 } = utils.accessControl
 
 
 const listConfigurations = list({
   fields: {
-    member: relationship({ ref: 'Member.comment', many: false }),
-    // collection: relationship({ ref: 'Collection.comment', many: false }),
-    // collection: relationship({ ref: 'Collection.comment', many: false }),
-    content: text({ validation: { isRequired: false }, label: '內容' }),
+    content: text({ validation: { isRequired: false }, label: '原文內容' }),
+    language: select({
+      label: '原始語言',
+      type: 'enum',
+      options: [
+        { label: '中文', value: 'zh' },
+        { label: 'English', value: 'en' },
+        { label: 'Tiếng Việt', value: 'vi' },
+        { label: 'Bahasa Indonesia', value: 'id' },
+        { label: 'ภาษาไทย', value: 'th' },
+      ],
+    }),
     content_zh: text({
       label: '內容（中文）',
       ui: { displayMode: 'textarea' },
@@ -45,20 +51,22 @@ const listConfigurations = list({
       ui: { displayMode: 'textarea' },
     }),
     post: relationship({ ref: 'Post.comments', many: false, label: '文章' }),
-    reactions: relationship({ ref: 'Reaction.comment', many: true, label: '反應' }),
-    parent: relationship({ ref: 'Comment', many: false, label: '父留言' }),
-    root: relationship({ ref: 'Comment', many: false, label: '根留言' }),
-    like: relationship({ ref: 'Member.member_like', many: true, label: '按讚' }),
-    state: select({
+    member: relationship({ ref: 'Member.comment', many: false, label: '作者' }),
+    ip: text({ label: '發文 IP' }),
+    status: select({
       label: '狀態',
       type: 'enum',
       options: [
-        { label: '公開', value: 'public' },
-        { label: '私藏', value: 'private' },
-        { label: '限好友', value: 'friend' }
+        { label: 'Published', value: 'published' },
+        { label: 'Hidden', value: 'hidden' },
       ],
-      defaultValue: 'public',
+      defaultValue: 'published',
     }),
+    reactions: relationship({ ref: 'Reaction.comment', many: true, label: '反應' }),
+    reports: relationship({ ref: 'Report.comment', many: true, label: '檢舉紀錄' }),
+    parent: relationship({ ref: 'Comment', many: false, label: '父留言' }),
+    root: relationship({ ref: 'Comment', many: false, label: '根留言' }),
+    like: relationship({ ref: 'Member.member_like', many: true, label: '按讚' }),
     published_date: timestamp({ validation: { isRequired: false }, label: '發布時間' }),
     is_edited: checkbox({
       defaultValue: false,
